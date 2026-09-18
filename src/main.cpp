@@ -32,14 +32,14 @@ double overlapRatio(const cv::RotatedRect &rect1, const cv::RotatedRect &rect2)
 }
 
 // Filter the detected rectangles based on overlap ratio and keep the larger ones and get the final cards
-void filterRectangles(std::vector<cv::RotatedRect> &detectedRectangles, std::vector<cv::RotatedRect> &filteredRectangles)
+void filterRectangles(std::vector<cv::RotatedRect> &candidates, std::vector<cv::RotatedRect> &filteredRectangles)
 {
-    for (const auto &rectangle : detectedRectangles)
+    for (const auto &candidate : candidates)
     {
         bool keepCurrent = true;
 
         // Check for overlap with already filtered rectangles
-        cv::RotatedRect currentRect = rectangle;
+        cv::RotatedRect currentRect = candidate;
         for (auto it = filteredRectangles.begin(); it != filteredRectangles.end();)
         {
             cv::RotatedRect otherRect = cv::RotatedRect(*it);
@@ -63,7 +63,7 @@ void filterRectangles(std::vector<cv::RotatedRect> &detectedRectangles, std::vec
             ++it;
         }
         if (keepCurrent)
-            filteredRectangles.push_back(rectangle);
+            filteredRectangles.push_back(currentRect);
     }
 }
 
@@ -143,6 +143,7 @@ void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<
     }
 }
 
+// Find cards in the frame by processing the image, detecting contours, filtering rectangles, and drawing them on the frame
 void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat &kernel)
 {
     // Convert the frame to grayscale and apply Gaussian blur
