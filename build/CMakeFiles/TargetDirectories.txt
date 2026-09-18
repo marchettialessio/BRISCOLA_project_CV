@@ -1,0 +1,3 @@
+/Users/nicky/Desktop/UNIPD/Corsi/CV/BRISCOLA_project_CV/build/CMakeFiles/main.dir
+/Users/nicky/Desktop/UNIPD/Corsi/CV/BRISCOLA_project_CV/build/CMakeFiles/edit_cache.dir
+/Users/nicky/Desktop/UNIPD/Corsi/CV/BRISCOLA_project_CV/build/CMakeFiles/rebuild_cache.dir

@@ -2,6 +2,21 @@
 #include <filesystem>
 #include <opencv2/opencv.hpp>
 
+// Draw the detected rectangles on the frame
+void drawRectangles(cv::Mat &frame, const std::vector<cv::RotatedRect> &rectangles)
+{
+    for (const auto &rectangle : rectangles)
+    {
+        std::array<cv::Point2f, 4> vertices;
+        rectangle.points(vertices.data());
+        for (int i = 0; i < 4; ++i)
+        {
+            cv::line(frame, vertices[i], vertices[(i + 1) % 4], cv::Scalar(0, 255, 0), 2);
+        }
+    }
+}
+
+// Calculate the overlap ratio between two rotated rectangles
 double overlapRatio(const cv::RotatedRect &rect1, const cv::RotatedRect &rect2)
 {
     std::vector<cv::Point2f> intersection;
@@ -16,7 +31,44 @@ double overlapRatio(const cv::RotatedRect &rect1, const cv::RotatedRect &rect2)
     return smallerArea > 0.0 ? intersectionArea / smallerArea : 0.0;
 }
 
-bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::RotatedRect &detectedRectangle)
+// Filter the detected rectangles based on overlap ratio and keep the larger ones and get the final cards
+void filterRectangles(std::vector<cv::RotatedRect> &detectedRectangles, std::vector<cv::RotatedRect> &filteredRectangles)
+{
+    for (const auto &rectangle : detectedRectangles)
+    {
+        bool keepCurrent = true;
+
+        // Check for overlap with already filtered rectangles
+        cv::RotatedRect currentRect = rectangle;
+        for (auto it = filteredRectangles.begin(); it != filteredRectangles.end();)
+        {
+            cv::RotatedRect otherRect = cv::RotatedRect(*it);
+
+            // Calculate the overlap ratio between the current rectangle and the other rectangle
+            double overlap = overlapRatio(currentRect, otherRect);
+
+            // If the overlap ratio is greater than 0.85, keep the larger rectangle and discard the smaller one
+            if (overlap > 0.85)
+            {
+                if (currentRect.size.area() > otherRect.size.area())
+                {
+                    it = filteredRectangles.erase(it);
+                    continue;
+                }
+
+                keepCurrent = false;
+                break;
+            }
+
+            ++it;
+        }
+        if (keepCurrent)
+            filteredRectangles.push_back(rectangle);
+    }
+}
+
+// Check if the contour is a rectangle based on area, aspect ratio, and mean brightness
+bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::RotatedRect &candidate)
 {
     double area = cv::contourArea(contour);
 
@@ -47,10 +99,10 @@ bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::Rotated
     if (polygon.size() < 4 || polygon.size() > 15)
         return false;
 
-    detectedRectangle = cv::minAreaRect(polygon);
+    candidate = cv::minAreaRect(polygon);
 
-    float width = detectedRectangle.size.width;
-    float height = detectedRectangle.size.height;
+    float width = candidate.size.width;
+    float height = candidate.size.height;
 
     if (width <= 0 || height <= 0)
         return false;
@@ -62,7 +114,7 @@ bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::Rotated
         return false;
 
     // Check if the detected rectangle is within the frame boundaries
-    cv::Rect bounds = detectedRectangle.boundingRect();
+    cv::Rect bounds = candidate.boundingRect();
 
     cv::Rect safeBounds = bounds & cv::Rect(0, 0, grayFrame.cols, grayFrame.rows);
     if (safeBounds.empty())
@@ -74,6 +126,56 @@ bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::Rotated
         return false;
 
     return true;
+}
+
+// Detect the candidates from the contours and store them in the candidates vector, also update the rectanglesCounter
+void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<cv::RotatedRect> &candidates, cv::Mat grayFrame, int &rectanglesCounter)
+{
+    for (const auto &contour : contours)
+    {
+        // Check if the contour is a rectangle
+        cv::RotatedRect candidate;
+        if (isRectangle(grayFrame, contour, candidate))
+        {
+            rectanglesCounter++;
+            candidates.push_back(candidate);
+        }
+    }
+}
+
+void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat &kernel)
+{
+    // Convert the frame to grayscale and apply Gaussian blur
+    cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
+    cv::GaussianBlur(grayFrame, grayFrame, cv::Size(5, 5), 0);
+
+    // Detect edges using Canny edge detection
+    cv::Mat edges;
+    cv::Canny(grayFrame, edges, 25.0, 90.0);
+
+    // Apply morphological closing to fill gaps in the edges
+    cv::morphologyEx(edges, edges, cv::MORPH_CLOSE, kernel);
+
+    // Find contours in the edges
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(edges, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+
+    // Find new candidates
+    int candidatesCounter = 0;
+    std::vector<cv::RotatedRect> candidates;
+
+    detectCandidates(contours, candidates, grayFrame, candidatesCounter);
+    std::cout << "Detected candidates: " << candidatesCounter << std::endl;
+
+    // Filter the detected candidates to get the cards
+    std::vector<cv::RotatedRect> filteredRectangles;
+    filterRectangles(candidates, filteredRectangles);
+
+    int rectanglesCounter = static_cast<int>(filteredRectangles.size()); // final rectangles counter
+    std::cout << "Filtered rectangles: " << rectanglesCounter << std::endl;
+
+    // Draw the filtered rectangles on the frame
+    drawRectangles(frame, filteredRectangles);
 }
 
 int main(int argc, char **argv)
@@ -88,12 +190,8 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    cv::Mat frame, grayFrame, edges;
+    cv::Mat frame, grayFrame;
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
-    std::vector<std::vector<cv::Point>> contours;
-
-    int rectanglesCounter = 0;                       // rectangles counter
-    std::vector<cv::RotatedRect> detectedRectangles; // found rectangles
 
     while (true)
     {
@@ -103,83 +201,10 @@ int main(int argc, char **argv)
             break;
         }
 
-        // Convert the frame to grayscale and apply Gaussian blur
-        cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
-        cv::GaussianBlur(grayFrame, grayFrame, cv::Size(5, 5), 0);
+        // Detect motion
 
-        // Detect edges using Canny edge detection
-        cv::Canny(grayFrame, edges, 25.0, 90.0);
-
-        // Apply morphological closing to fill gaps in the edges
-        cv::morphologyEx(edges, edges, cv::MORPH_CLOSE, kernel);
-
-        // Find contours in the edges
-        cv::findContours(edges, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
-
-        rectanglesCounter = 0;      // reset counter for each frame
-        detectedRectangles.clear(); // clear previous rectangles for each frame
-
-        for (const auto &contour : contours)
-        {
-            // Check if the contour is a rectangle and get its vertices
-            cv::RotatedRect detectedRectangle;
-            std::array<cv::Point2f, 4> vertices;
-            if (isRectangle(grayFrame, contour, detectedRectangle))
-            {
-                rectanglesCounter++;
-                detectedRectangles.push_back(detectedRectangle);
-            }
-        }
-        std::cout << "Detected rectangles: " << rectanglesCounter << std::endl;
-
-        // Final rectangles list
-        std::vector<cv::RotatedRect> filteredRectangles;
-
-        // Filter out overlapping rectangles based on the overlap ratio
-        for (const auto &rectangle : detectedRectangles)
-        {
-            bool keepCurrent = true;
-
-            // Check for overlap with already filtered rectangles
-            cv::RotatedRect currentRect = rectangle;
-            for (auto it = filteredRectangles.begin(); it != filteredRectangles.end();)
-            {
-                cv::RotatedRect otherRect = cv::RotatedRect(*it);
-
-                // Calculate the overlap ratio between the current rectangle and the other rectangle
-                double overlap = overlapRatio(currentRect, otherRect);
-
-                // If the overlap ratio is greater than 0.85, keep the larger rectangle and discard the smaller one
-                if (overlap > 0.85)
-                {
-                    if (currentRect.size.area() > otherRect.size.area())
-                    {
-                        it = filteredRectangles.erase(it);
-                        continue;
-                    }
-
-                    keepCurrent = false;
-                    break;
-                }
-
-                ++it;
-            }
-            if (keepCurrent)
-                filteredRectangles.push_back(rectangle);
-        }
-
-        // Draw the filtered rectangles on the frame
-        for (const auto &rectangle : filteredRectangles)
-        {
-            std::array<cv::Point2f, 4> vertices;
-            rectangle.points(vertices.data());
-            for (int i = 0; i < 4; ++i)
-            {
-                cv::line(frame, vertices[i], vertices[(i + 1) % 4], cv::Scalar(0, 255, 0), 2);
-            }
-        }
-        rectanglesCounter = static_cast<int>(filteredRectangles.size()); // conteggio finale
-        std::cout << "Filtered rectangles: " << rectanglesCounter << std::endl;
+        // Find cards in the current frame
+        findCards(frame, grayFrame, kernel);
 
         cv::imshow("Video Frame", frame);
 
