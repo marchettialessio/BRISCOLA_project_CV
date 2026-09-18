@@ -144,7 +144,7 @@ void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<
 }
 
 // Find cards in the frame by processing the image, detecting contours, filtering rectangles, and drawing them on the frame
-void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat &kernel)
+void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel)
 {
     // Convert the frame to grayscale and apply Gaussian blur
     cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
@@ -179,43 +179,140 @@ void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat &kernel)
     drawRectangles(frame, filteredRectangles);
 }
 
-int main(int argc, char **argv)
+// Detect motion in the frame using background subtraction and display the motion mask
+void detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &frame, cv::Mat kernel, int &north, int &south)
 {
-    std::filesystem::path path = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game3" / "game3round11.mp4";
+    // Apply background subtraction to detect motion
+    cv::Mat mask;
+    subtractor->apply(frame, mask);
 
+    // Apply Gaussian blur to the mask to reduce noise
+    cv::GaussianBlur(mask, mask, cv::Size(5, 5), 0);
+
+    // Threshold the mask to create a binary image
+    cv::threshold(mask, mask, 220, 255, cv::THRESH_BINARY);
+
+    // Apply morpholgical opening to remove noise and small objects from the mask
+    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
+
+    // Calculate the moments of the mask to find the centroid of the motion
+    cv::Moments moments = cv::moments(mask, true);
+
+    // m00 = n° white pixels in the mask
+    if (moments.m00 == 0.0)
+        return; // No motion detected, skip further processing
+
+    double whiteRatio = moments.m00 / mask.total();
+
+    if (whiteRatio < 0.02)
+        return; // Not enough motion detected, skip further processing
+
+    // Calculate the centroid of the motion m10 = sum of x coordinates of white pixels, m01 = sum of y coordinates of white pixels
+    cv::Point2f centroid(moments.m10 / moments.m00,
+                         moments.m01 / moments.m00);
+
+    if (centroid.y < frame.rows / 2)
+    {
+        std::cout << "Motion detected in the North region, North: " << north << std::endl;
+        north++;
+    }
+    else
+    {
+        std::cout << "Motion detected in the South region, South: " << south << std::endl;
+        south++;
+    }
+
+    cv::imshow("Motion", mask);
+
+    // MAYBE TO REINFORCE IT BY TRACKING THE DIRECTION OF THE MOTION
+    // IT GIVES PROBLEMS ON GAME 3 ROUND 4(?), THE FIRST CARD IS DETECTED IN THE SOUTH BUT DOES NOT GET TOO MANY VOTES
+    // TO PERFORM ALSO MORE PARAMETER TUNING
+}
+
+bool processVideo(const std::string &path)
+{
     cv::VideoCapture video(path);
 
     if (!video.isOpened())
     {
         std::cerr << "Could not open the video: " << path << std::endl;
-        return -1;
+        return false;
     }
 
     cv::Mat frame, grayFrame;
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 
+    cv::Mat kernel2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
+    cv::Ptr<cv::BackgroundSubtractorMOG2> subtractor = cv::createBackgroundSubtractorMOG2(500, 16, true);
+    int north, south = 0;  // Votes for the first card detection
+    bool detected = false; // Flag to indicate if the first card has been detected
+
     while (true)
     {
         if (!video.read(frame) || frame.empty())
         {
-            std::cout << "End of video or failed to read frame." << std::endl;
+            std::cout << "End of video or failed to read frame" << std::endl;
             break;
         }
 
-        // Detect motion
+        // If the first card has not been detected yet, perform motion detection to find the first card
+        if (!detected)
+        {
+            detectMotion(subtractor, frame, kernel2, north, south);
+            if (north >= 5)
+            {
+                std::cout << "Leader: North" << std::endl;
+                detected = true; // Set the flag to true after the first card is detected
+
+                cv::Mat motionFound = cv::Mat::zeros(frame.size(), CV_8UC3);
+                cv::putText(motionFound, "North", cv::Point(50, 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+                cv::imshow("Motion", motionFound);
+            }
+            else if (south >= 5)
+            {
+                std::cout << "Leader: South" << std::endl;
+                detected = true; // Set the flag to true after the first card is detected
+
+                cv::Mat motionFound = cv::Mat::zeros(frame.size(), CV_8UC3);
+                cv::putText(motionFound, "South", cv::Point(50, 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+                cv::imshow("Motion", motionFound);
+            }
+        }
 
         // Find cards in the current frame
         findCards(frame, grayFrame, kernel);
 
         cv::imshow("Video Frame", frame);
 
-        // Press ESC to stop
+        // Press ESC to skip video
         if (cv::waitKey(30) == 27)
             break;
     }
 
     video.release();
     cv::destroyAllWindows();
+
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+    const std::filesystem::path videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game3";
+    // const std::filesystem::path path = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game3" / "game3round1.mp4";
+
+    for (const auto &video : std::filesystem::directory_iterator(videoFolder))
+    {
+        if (!video.is_regular_file() && video.path().extension().string() == ".mp4")
+            continue;
+
+        std::cout << "Processing video: " << video.path() << std::endl;
+        if (!processVideo(video.path().string()))
+            break;
+
+        // Press ESC to stop
+        if (cv::waitKey(1000) == 27)
+            break;
+    }
 
     return 0;
 }
