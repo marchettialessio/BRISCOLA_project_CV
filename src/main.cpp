@@ -308,9 +308,16 @@ bool processVideo(const std::string &path, std::ofstream &outputFile)
 
 int main(int argc, char **argv)
 {
-    const std::filesystem::path videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game1";
+    std::filesystem::path videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game1";
+    std::filesystem::path outputFilePath = std::filesystem::path(PROJECT_SOURCE_DIR) / "output" / "game1output.txt";
 
-    const std::filesystem::path outputFilePath = std::filesystem::path(PROJECT_SOURCE_DIR) / "output" / "game1output.txt";
+    if (argc > 1)
+    {
+        std::string game = argv[1];
+        videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / ("game" + game);
+        outputFilePath = std::filesystem::path(PROJECT_SOURCE_DIR) / "output" / ("game" + game + "output.txt");
+    }
+
     std::ofstream outputFile(outputFilePath);
 
     int counter = 0;
