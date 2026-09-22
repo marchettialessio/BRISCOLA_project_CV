@@ -286,6 +286,11 @@ bool processVideo(const std::string &path, bool firstRound)
         return false;
     }
 
+    std::cout << "Backend: " << video.getBackendName() << '\n';
+    std::cout << "Width: " << video.get(cv::CAP_PROP_FRAME_WIDTH) << '\n';
+    std::cout << "Height: " << video.get(cv::CAP_PROP_FRAME_HEIGHT) << '\n';
+    std::cout << "FPS: " << video.get(cv::CAP_PROP_FPS) << '\n';
+
     cv::Mat frame, grayFrame;
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 
@@ -374,11 +379,12 @@ int main(int argc, char **argv)
         videos.push_back(entry.path());
     }
 
+    std::cout << "OpenCV: " << CV_VERSION << '\n';
+
     std::sort(videos.begin(), videos.end());
     bool firstRound = true;
     for (const auto &video : videos)
     {
-
         std::cout << "Processing video: " << video << std::endl;
         if (!processVideo(video.string(), firstRound))
             break;
