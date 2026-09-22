@@ -1,5 +1,6 @@
 #include <iostream>
 #include <filesystem>
+#include <fstream>
 #include <opencv2/opencv.hpp>
 
 // Draw the detected rectangles on the frame
@@ -190,7 +191,7 @@ void detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &fr
     cv::GaussianBlur(mask, mask, cv::Size(5, 5), 0);
 
     // Threshold the mask to create a binary image
-    cv::threshold(mask, mask, 220, 255, cv::THRESH_BINARY);
+    cv::threshold(mask, mask, 200, 255, cv::THRESH_BINARY);
 
     // Apply morpholgical opening to remove noise and small objects from the mask
     cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
@@ -223,13 +224,9 @@ void detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &fr
     }
 
     cv::imshow("Motion", mask);
-
-    // MAYBE TO REINFORCE IT BY TRACKING THE DIRECTION OF THE MOTION
-    // IT GIVES PROBLEMS ON GAME 3 ROUND 4(?), THE FIRST CARD IS DETECTED IN THE SOUTH BUT DOES NOT GET TOO MANY VOTES
-    // TO PERFORM ALSO MORE PARAMETER TUNING
 }
 
-bool processVideo(const std::string &path)
+bool processVideo(const std::string &path, std::ofstream &outputFile)
 {
     cv::VideoCapture video(path);
 
@@ -256,26 +253,40 @@ bool processVideo(const std::string &path)
         }
 
         // If the first card has not been detected yet, perform motion detection to find the first card
-        if (!detected)
-        {
-            detectMotion(subtractor, frame, kernel2, north, south);
+    
+        detectMotion(subtractor, frame, kernel2, north, south);
+        if (!detected) {
             if (north >= 5)
             {
                 std::cout << "Leader: North" << std::endl;
                 detected = true; // Set the flag to true after the first card is detected
 
-                cv::Mat motionFound = cv::Mat::zeros(frame.size(), CV_8UC3);
-                cv::putText(motionFound, "North", cv::Point(50, 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
-                cv::imshow("Motion", motionFound);
+                if (outputFile.is_open())
+                {
+                    outputFile << "Leader: North" << std::endl;
+                    outputFile.flush(); // Ensure the output is written to the file immediately
+                    return true; // Exit the function after writing to the output file
+                }
+                else
+                {
+                    std::cerr << "Failed to write to output file." << std::endl;
+                }
             }
             else if (south >= 5)
             {
                 std::cout << "Leader: South" << std::endl;
                 detected = true; // Set the flag to true after the first card is detected
 
-                cv::Mat motionFound = cv::Mat::zeros(frame.size(), CV_8UC3);
-                cv::putText(motionFound, "South", cv::Point(50, 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
-                cv::imshow("Motion", motionFound);
+                if (outputFile.is_open())
+                {
+                    outputFile << "Leader: South" << std::endl;
+                    outputFile.flush(); // Ensure the output is written to the file immediately
+                    return true; // Exit the function after writing to the output file
+                }
+                else
+                {
+                    std::cerr << "Failed to write to output file." << std::endl;
+                }
             }
         }
 
@@ -297,22 +308,41 @@ bool processVideo(const std::string &path)
 
 int main(int argc, char **argv)
 {
-    const std::filesystem::path videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game3";
-    // const std::filesystem::path path = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game3" / "game3round1.mp4";
+    const std::filesystem::path videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game1";
+
+    const std::filesystem::path outputFilePath = std::filesystem::path(PROJECT_SOURCE_DIR) / "output" / "game1output.txt";
+    std::ofstream outputFile(outputFilePath);
+
+    int counter = 0;
 
     for (const auto &video : std::filesystem::directory_iterator(videoFolder))
     {
         if (!video.is_regular_file() && video.path().extension().string() == ".mp4")
             continue;
+        counter++;
+        if (outputFile.is_open())
+        {
+            outputFile << "Round " << counter << std::endl;
+            outputFile.flush(); // Ensure the output is written to the file immediately
+        }
+        else
+        {
+            std::cerr << "Failed to open output file." << std::endl;
+        }
 
         std::cout << "Processing video: " << video.path() << std::endl;
-        if (!processVideo(video.path().string()))
+        if (!processVideo(video.path().string(), outputFile))
             break;
 
         // Press ESC to stop
         if (cv::waitKey(1000) == 27)
             break;
     }
+
+    /*
+    const std::filesystem::path path = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game3" / "game3round1.mp4";
+    processVideo(video.path().string(), outputFile);
+    */
 
     return 0;
 }
