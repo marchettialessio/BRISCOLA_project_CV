@@ -84,8 +84,8 @@ bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::Rotated
         max_ratio_length=1.8f;
     }
     else{
-        frame_ratio=0.002;
-        area_ratio=0.5;
+        frame_ratio=0.01;
+        area_ratio=0.3;
         min_ratio_length=1.4f;
         max_ratio_length=2.2f;
     }
@@ -343,7 +343,7 @@ bool processVideo(const std::string &path, bool firstRound)
         ++frameIndex;
 
         // Press ESC to skip video
-        if (cv::waitKey(30) == 27)
+        if (cv::waitKey() == 27)
             break;
     }
 
@@ -359,10 +359,10 @@ int main(int argc, char **argv)
     if(argc>1){
         videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / argv[1];
         if (!std::filesystem::is_directory(videoFolder))
-            videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "BRISCOLA" / argv[1];
+            videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / argv[1];
     }
     else{
-        videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "BRISCOLA" / "game3";
+        videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game4";
     }   
     //const std::filesystem::path path = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game3" / "game3round1.mp4";
 
