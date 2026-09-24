@@ -2,6 +2,9 @@
 #include <filesystem>
 #include <fstream>
 #include <opencv2/opencv.hpp>
+#include <regex>
+#include <map>
+#include "DatasetBuilder.hpp"
 
 // Draw the detected rectangles on the frame
 void drawRectangles(cv::Mat &frame, const std::vector<cv::RotatedRect> &rectangles)
@@ -145,7 +148,7 @@ void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<
 }
 
 // Find cards in the frame by processing the image, detecting contours, filtering rectangles, and drawing them on the frame
-void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel)
+void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilder *builder = nullptr)
 {
     // Convert the frame to grayscale and apply Gaussian blur
     cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
@@ -175,6 +178,10 @@ void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel)
 
     int rectanglesCounter = static_cast<int>(filteredRectangles.size()); // final rectangles counter
     std::cout << "Filtered rectangles: " << rectanglesCounter << std::endl;
+
+    // Associate the rectangles with the round's cards (before drawing on the frame)
+    if (builder)
+        builder->processFrame(frame, filteredRectangles);
 
     // Draw the filtered rectangles on the frame
     drawRectangles(frame, filteredRectangles);
@@ -226,7 +233,7 @@ void detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &fr
     cv::imshow("Motion", mask);
 }
 
-bool processVideo(const std::string &path, std::ofstream &outputFile)
+bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder = nullptr)
 {
     cv::VideoCapture video(path);
 
@@ -241,7 +248,7 @@ bool processVideo(const std::string &path, std::ofstream &outputFile)
 
     cv::Mat kernel2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
     cv::Ptr<cv::BackgroundSubtractorMOG2> subtractor = cv::createBackgroundSubtractorMOG2(500, 16, true);
-    int north, south = 0;  // Votes for the first card detection
+    int north = 0, south = 0; // Votes for the first card detection
     bool detected = false; // Flag to indicate if the first card has been detected
 
     while (true)
@@ -253,9 +260,10 @@ bool processVideo(const std::string &path, std::ofstream &outputFile)
         }
 
         // If the first card has not been detected yet, perform motion detection to find the first card
-    
-        detectMotion(subtractor, frame, kernel2, north, south);
-        if (!detected) {
+        // In dataset mode the Leader comes from the label: motion detection is not needed
+        if (!builder)
+            detectMotion(subtractor, frame, kernel2, north, south);
+        if (!builder && !detected) {
             if (north >= 5)
             {
                 std::cout << "Leader: North" << std::endl;
@@ -291,12 +299,12 @@ bool processVideo(const std::string &path, std::ofstream &outputFile)
         }
 
         // Find cards in the current frame
-        findCards(frame, grayFrame, kernel);
+        findCards(frame, grayFrame, kernel, builder);
 
         cv::imshow("Video Frame", frame);
 
         // Press ESC to skip video
-        if (cv::waitKey(30) == 27)
+        if (cv::waitKey(builder ? 1 : 30) == 27)
             break;
     }
 
@@ -306,30 +314,74 @@ bool processVideo(const std::string &path, std::ofstream &outputFile)
     return true;
 }
 
+// Extract the round number(es. game3round10.mp4 -> 10)
+int roundNumber(const std::filesystem::path &video)
+{
+    std::smatch match;
+    const std::string name = video.filename().string();
+
+    if (std::regex_search(name, match, std::regex("round(\\d+)")))
+        return std::stoi(match[1]);
+    return -1;
+}
+
 int main(int argc, char **argv)
 {
-    std::filesystem::path videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game1";
-    std::filesystem::path outputFilePath = std::filesystem::path(PROJECT_SOURCE_DIR) / "output" / "game1output.txt";
+    const std::filesystem::path root(PROJECT_SOURCE_DIR);
+    std::filesystem::path videoFolder = root / "Briscola" / "game1";
+    std::filesystem::path outputFilePath = root / "output" / "game1output.txt";
 
+    std::string game = "1";
     if (argc > 1)
     {
-        std::string game = argv[1];
-        videoFolder = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / ("game" + game);
-        outputFilePath = std::filesystem::path(PROJECT_SOURCE_DIR) / "output" / ("game" + game + "output.txt");
+        game = argv[1];
+        videoFolder = root / "Briscola" / ("game" + game);
+        outputFilePath = root / "output" / ("game" + game + "output.txt");
     }
 
     std::ofstream outputFile(outputFilePath);
 
-    int counter = 0;
+    const bool datasetMode = argc > 2 && std::string(argv[2]) == "--dataset";
 
+    // ordering videos by round number
+    std::vector<std::filesystem::path> videos;
     for (const auto &video : std::filesystem::directory_iterator(videoFolder))
     {
-        if (!video.is_regular_file() && video.path().extension().string() == ".mp4")
+        if (!video.is_regular_file() || video.path().extension() != ".mp4")
             continue;
-        counter++;
+        videos.push_back(video.path());
+    }
+    std::sort(videos.begin(), videos.end(), [](const auto &a, const auto &b)
+              { return roundNumber(a) < roundNumber(b); });
+
+    std::unique_ptr<DatasetBuilder> builder;
+
+    // load game labels, indexed by round
+    std::map<int, RoundLabel> labels;
+    if (datasetMode)
+    {
+        // I find the label file for the selected game
+        const std::filesystem::path labelFile = findLabelFile(root / "labels", std::stoi(game));
+        if (labelFile.empty())
+        {
+            std::cerr << "No label file for game " << game << std::endl;
+            return 1;
+        }
+
+        // I parse all the labels for each round and store them
+        for (const auto &label : parseLabels(labelFile))
+            labels[label.round] = label;
+
+        builder = std::make_unique<DatasetBuilder>(root / "dataset", std::stoi(game));
+    }
+
+    for (const auto &video : videos)
+    {
+        const int round = roundNumber(video);
+
         if (outputFile.is_open())
         {
-            outputFile << "Round " << counter << std::endl;
+            outputFile << "Round " << round << std::endl;
             outputFile.flush(); // Ensure the output is written to the file immediately
         }
         else
@@ -337,19 +389,28 @@ int main(int argc, char **argv)
             std::cerr << "Failed to open output file." << std::endl;
         }
 
-        std::cout << "Processing video: " << video.path() << std::endl;
-        if (!processVideo(video.path().string(), outputFile))
+        if (builder)
+        {
+            if (!labels.count(round))
+            {
+                std::cerr << "Missing label for round " << round << ", video skipped" << std::endl;
+                continue;
+            }
+            //i start to build the dataset for the current round
+            builder->startRound(labels[round]);
+        }
+
+        std::cout << "Processing video: " << video << std::endl;
+        if (!processVideo(video.string(), outputFile, builder.get()))
             break;
+
+        if (builder)
+            builder->endRound();
 
         // Press ESC to stop
-        if (cv::waitKey(1000) == 27)
+        if (cv::waitKey(builder ? 1 : 1000) == 27)
             break;
     }
-
-    /*
-    const std::filesystem::path path = std::filesystem::path(PROJECT_SOURCE_DIR) / "Briscola" / "game3" / "game3round1.mp4";
-    processVideo(video.path().string(), outputFile);
-    */
 
     return 0;
 }

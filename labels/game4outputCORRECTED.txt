@@ -1,0 +1,144 @@
+Round 1
+North : 3 , clubs
+South : 8 , clubs
+Briscola : 6 , coins
+Leader : South 
+Winner : North
+Points : 12
+Round 2
+North : 2 , clubs
+South : 9 , coins
+Briscola : 6 , coins
+Leader : North 
+Winner : South
+Points : 3 
+Round 3
+North : 7 , cups
+South : 6 , spades
+Briscola : 6 , coins
+Leader : South 
+Winner : South
+Points : 0 
+Round 4
+North : 10 , clubs
+South : 6 , clubs
+Briscola : 6 , coins
+Leader : South 
+Winner : North
+Points : 4 
+Round 5
+North : 4 , spades
+South : 4 , cups
+Briscola : 6 , coins
+Leader : North 
+Winner : North
+Points : 0 
+Round 6
+North : 10, cups
+South : 4 , coins
+Briscola : 6 , coins
+Leader : North 
+Winner : South
+Points : 4
+Round 7
+North : 7 , clubs
+South : 3 , spades
+Briscola : 6 , coins
+Leader : South 
+Winner : South
+Points : 10
+Round 8
+North : 5 , cups
+South : 6 , cups
+Briscola : 6 , coins
+Leader : South 
+Winner : South
+Points : 0
+Round 9
+North : 8 , coins
+South : 7 , spades
+Briscola : 6 , coins
+Leader : South 
+Winner : North
+Points : 2 
+Round 10
+North : 4 , clubs
+South : 1 , clubs
+Briscola : 6 , coins
+Leader : North 
+Winner : South
+Points : 11
+Round 11
+North : 2 , coins
+South : 5 , coins
+Briscola : 6 , coins
+Leader : South 
+Winner : South
+Points : 0 
+Round 12
+North : 9 , spades
+South : 2 , spades
+Briscola : 6 , coins
+Leader : South 
+Winner : North
+Points : 3 
+Round 13
+North : 9 , clubs
+South : 10 , coins
+Briscola : 6 , coins
+Leader : North 
+Winner : South
+Points : 7
+Round 14
+North : 10 , spades
+South : 8 , spades
+Briscola : 6 , coins
+Leader : South 
+Winner : North
+Points : 6
+Round 15
+North : 9 , cups
+South : 5 , clubs
+Briscola : 6 , coins
+Leader : North 
+Winner : North
+Points : 3 
+Round 16
+North : 1 , coins
+South : 5 , spades
+Briscola : 6 , coins
+Leader : North 
+Winner : North
+Points : 11
+Round 17
+North : 8 , cups
+South : 7 , coins
+Briscola : 6 , coins
+Leader : North 
+Winner : South
+Points : 2
+Round 18
+North : 1 , cups
+South : 2 , cups
+Briscola : 6 , coins
+Leader : South 
+Winner : North
+Points : 11
+Round 19
+North : 6 , coins
+South : 1 , spades
+Briscola : 6 , coins
+Leader : North 
+Winner : North
+Points : 11 
+Round 20
+North : 3 , cups
+South : 3 , coins 
+Briscola : 6 , coins
+Leader : North 
+Winner : South
+Points : 20 
+----
+Winner : North
+Total Points South : 57
+Total Points North : 63
