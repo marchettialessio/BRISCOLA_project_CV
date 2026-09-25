@@ -6,188 +6,6 @@
 #include <iostream>
 #include <sstream>
 
-std::string trim(const std::string &s)
-{
-    const auto begin = s.find_first_not_of(" \t\r\n");
-    // I'm searching first char != from " \t\r\n"
-    if (begin == std::string::npos)
-        return "";
-    const auto end = s.find_last_not_of(" \t\r\n");
-    return s.substr(begin, end - begin + 1);
-}
-
-std::string toLower(std::string s)
-{
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
-                   { return std::tolower(c); });
-    return s;
-}
-
-// method to convert suit name to index
-int suitIndex(const std::string &name)
-{
-    if (name == "coins")
-        return 0;
-    if (name == "cups")
-        return 1;
-    if (name == "spades")
-        return 2;
-    if (name == "clubs")
-        return 3;
-    return -1;
-}
-
-// get the short side of a rectangle
-float shortSide(const cv::RotatedRect &rect)
-{
-    return std::min(rect.size.width, rect.size.height);
-}
-
-// Small grayscale version of the crop, to compare appearance
-cv::Mat thumbnail(const cv::Mat &crop)
-{
-    cv::Mat gray, small;
-    cv::cvtColor(crop, gray, cv::COLOR_BGR2GRAY);
-    cv::resize(gray, small, cv::Size(40, 60), 0, 0, cv::INTER_AREA);
-    small.convertTo(small, CV_32F);
-    return small;
-}
-
-// Similarity between two thumbnails, tolerant to 180 degree rotation
-double similarity(const cv::Mat &a, const cv::Mat &b)
-{
-    cv::Mat flipped, score;
-    cv::flip(b, flipped, -1);
-
-    cv::matchTemplate(a, b, score, cv::TM_CCOEFF_NORMED);
-    const double direct = score.at<float>(0, 0);
-    cv::matchTemplate(a, flipped, score, cv::TM_CCOEFF_NORMED);
-    return std::max(direct, static_cast<double>(score.at<float>(0, 0)));
-}
-
-// Converts value (ex. "6 , clubs") to CardLabel
-bool parseCard(const std::string &value, CardLabel &card)
-{
-    const auto comma = value.find(',');
-    if (comma == std::string::npos)
-        return false;
-
-    try
-    {
-        card.rank = std::stoi(trim(value.substr(0, comma)));
-    }
-    catch (...)
-    {
-        return false;
-    }
-
-    card.suitName = toLower(trim(value.substr(comma + 1)));
-    card.suit = suitIndex(card.suitName);
-
-    //check correctness
-    if (card.rank < 1 || card.rank > 10 || card.suit < 0)
-        return false;
-
-    //simple calculation for the class ID, unique for each card
-    card.classId = card.suit * 10 + (card.rank - 1);
-    return true;
-}
-
-// i want to parse the label file and return the vector of RoundLabel, one for each round
-std::vector<RoundLabel> parseLabels(const std::filesystem::path &file)
-{
-    std::vector<RoundLabel> rounds;
-    std::ifstream in(file);
-
-    if (!in.is_open())
-    {
-        std::cerr << "Could not open label file: " << file << std::endl;
-        return rounds;
-    }
-
-    std::string line;
-
-    // I read the file line by line
-    while (std::getline(in, line))
-    {
-        line = trim(line);
-        if (line.empty())
-            continue;
-
-        // New round
-        if (line.rfind("Round", 0) == 0)
-        {
-            RoundLabel label;
-            label.round = std::stoi(trim(line.substr(5)));
-            rounds.push_back(label);
-            continue;
-        }
-
-        const auto colon = line.find(':');
-        if (colon == std::string::npos || rounds.empty())
-            continue;
-
-        // parse key and value, divided by the colon
-        const std::string key = trim(line.substr(0, colon));
-        const std::string value = trim(line.substr(colon + 1));
-        RoundLabel &label = rounds.back();
-
-        bool correct = true;
-
-        if (key == "North")
-            correct = parseCard(value, label.north);
-        else if (key == "South")
-            correct = parseCard(value, label.south);
-        else if (key == "Briscola")
-            correct = parseCard(value, label.briscola);
-        else if (key == "Leader")
-            label.leaderNorth = (value == "North");
-        // Winner, points, total points are not needed for the dataset
-
-        if (!correct)
-            std::cerr << "Invalid label line (round " << label.round << "): " << line << std::endl;
-    }
-
-    return rounds;
-}
-
-std::filesystem::path findLabelFile(const std::filesystem::path &labelsDir, int game)
-{
-    const std::string prefix = "game" + std::to_string(game) + "output";
-
-    for (const auto &entry : std::filesystem::directory_iterator(labelsDir))
-    {
-        const std::string name = entry.path().filename().string();
-        // I check if it is regular, if the file starts with the right prefix and if the extension is .txt
-        if (entry.is_regular_file() && name.rfind(prefix, 0) == 0 && entry.path().extension() == ".txt")
-            return entry.path();
-    }
-
-    return {};
-}
-
-cv::Mat warpCard(const cv::Mat &frame, const cv::RotatedRect &rect, cv::Size size)
-{
-    std::array<cv::Point2f, 4> pts;
-    rect.points(pts.data());
-
-    // Starts from the vertex where the short side originates, so the card comes out vertical
-    const int start = cv::norm(pts[1] - pts[0]) < cv::norm(pts[2] - pts[1]) ? 0 : 1;
-
-    std::array<cv::Point2f, 4> source;
-    for (int i = 0; i < 4; ++i)
-        source[i] = pts[(start + i) % 4];
-
-    const float w = static_cast<float>(size.width - 1);
-    const float h = static_cast<float>(size.height - 1);
-    const std::array<cv::Point2f, 4> destination = {cv::Point2f(0, 0), cv::Point2f(w, 0), cv::Point2f(w, h), cv::Point2f(0, h)};
-
-    cv::Mat transform = cv::getPerspectiveTransform(source.data(), destination.data());
-    cv::Mat warped;
-    cv::warpPerspective(frame, warped, transform, size);
-    return warped;
-}
-
 DatasetBuilder::DatasetBuilder(const std::filesystem::path &outDir, int game, int cropEvery, int stableFrames)
     : imagesDir(outDir / "images"), game(game), cropEvery(cropEvery), stableFrames(stableFrames)
 {
@@ -211,7 +29,6 @@ void DatasetBuilder::startRound(const RoundLabel &label)
     nextRole = 0;
 }
 
-// I want to find the track that matches the current rect, if any
 int DatasetBuilder::matchTrack(const cv::RotatedRect &rect, const std::vector<bool> &used) const
 {
     int best = -1;
@@ -223,13 +40,19 @@ int DatasetBuilder::matchTrack(const cv::RotatedRect &rect, const std::vector<bo
             continue;
 
         const cv::RotatedRect &other = tracks[i].rect;
+        const bool confirmed = tracks[i].role != Role::Unknown;
+
+        // Confirmed cards are still: compare with the confirmation center and a tight radius,
+        // otherwise the second card, placed overlapping, gets absorbed by the first card's track
+        const cv::Point2f reference = confirmed ? tracks[i].anchor : other.center;
+        const double maxDist = (confirmed ? anchorRadius : 0.5) * shortSide(other);
 
         // Distance between the centers of the two rectangles
-        const double dist = cv::norm(rect.center - other.center);
+        const double dist = cv::norm(rect.center - reference);
         const double areaRatio = rect.size.area() / std::max(other.size.area(), 1.0f);
 
         // Same card: nearby center; tolerant area because the hand can enlarge the contour
-        if (dist < 0.5 * shortSide(other) && areaRatio > 0.5 && areaRatio < 2.0)
+        if (dist < maxDist && areaRatio > 0.5 && areaRatio < 2.0)
         {
             if (best < 0 || dist < bestDist)
             {
@@ -242,8 +65,10 @@ int DatasetBuilder::matchTrack(const cv::RotatedRect &rect, const std::vector<bo
     return best;
 }
 
-void DatasetBuilder::processFrame(const cv::Mat &frame, const std::vector<cv::RotatedRect> &rects)
+void DatasetBuilder::processFrame(const cv::Mat &frame, const std::vector<cv::RotatedRect> &rects, int motion)
 {
+    frameHeight = frame.rows;
+
     // I have to undestand if a track has been matched
     std::vector<bool> used(tracks.size(), false);
 
@@ -255,6 +80,18 @@ void DatasetBuilder::processFrame(const cv::Mat &frame, const std::vector<cv::Ro
         // if no match, new track
         if (idx < 0)
         {
+            // Duplicate of a card already seen in this frame (outer border + inner frame)
+            bool duplicate = false;
+            for (int j = 0; j < static_cast<int>(tracks.size()); ++j)
+                if (used[j] && cv::norm(rect.center - tracks[j].rect.center) < 0.5 * shortSide(tracks[j].rect))
+                    duplicate = true;
+            // Rectangle slightly shifted from a confirmed card: it is the same card, not a new one
+            for (const auto &other : tracks)
+                if (other.role != Role::Unknown && cv::norm(rect.center - other.anchor) < noSpawnRadius * shortSide(other.rect))
+                    duplicate = true;
+            if (duplicate)
+                continue;
+
             // New track
             Track track;
             track.rect = rect;
@@ -268,6 +105,15 @@ void DatasetBuilder::processFrame(const cv::Mat &frame, const std::vector<cv::Ro
         used[idx] = true;
         Track &track = tracks[idx];
 
+        // Until the card is still it is being placed: the motion tells which side it comes from
+        if (track.role == Role::Unknown)
+        {
+            if (motion > 0)
+                track.northVotes++;
+            else if (motion < 0)
+                track.southVotes++;
+        }
+
         // Card is still if the center moves little relative to the last seen position
         const bool still = cv::norm(rect.center - track.rect.center) < 0.05 * shortSide(track.rect);
         // Update the still counter, otherwise reset to 1
@@ -278,8 +124,8 @@ void DatasetBuilder::processFrame(const cv::Mat &frame, const std::vector<cv::Ro
         // COonfirmation: if the card has been still for stableFrames frames, it is confirmed and assigned a role
         if (track.role == Role::Unknown && track.stillCounter >= stableFrames)
         {
-            if (track.firstSeen < backgroundFrames)
-                track.role = Role::Background; // already on the table at the start of the video (briscola)
+            if (isHorizontal(rect))
+                track.role = Role::Background; // briscola
             else if (nextRole == 0)
             {
                 track.role = Role::First;
@@ -294,6 +140,7 @@ void DatasetBuilder::processFrame(const cv::Mat &frame, const std::vector<cv::Ro
                 track.role = Role::Background; // extra cards (e.g. pickup at end of round)
 
             track.refArea = rect.size.area(); // reference area for the confirmed card
+            track.anchor = rect.center;
         }
 
         // save crop for a track every cropEvery frames for played cards, only if still
@@ -354,18 +201,40 @@ void DatasetBuilder::saveCrops(const Track &track, const CardLabel &label, const
     csv.flush();
 }
 
+const DatasetBuilder::Track *DatasetBuilder::findRole(Role role) const
+{
+    for (const auto &track : tracks)
+        if (track.role == role)
+            return &track;
+    return nullptr;
+}
+
+// Card side: detectMotion votes collected while it was being placed 
+bool DatasetBuilder::isNorth(const Track &track, const Track *other) const
+{
+    if (std::abs(track.northVotes - track.southVotes) >= minVoteMargin)
+        return track.northVotes > track.southVotes;
+        //not enogh votes in first
+    if (other && std::abs(other->northVotes - other->southVotes) >= minVoteMargin)
+        return other->southVotes > other->northVotes;
+        // not enough votes in second, use position to decide
+    if (other)
+        return track.rect.center.y < other->rect.center.y;
+    return track.rect.center.y < frameHeight / 2.0f;
+}
+
+std::string DatasetBuilder::leaderSide() const
+{
+    const Track *first = findRole(Role::First);
+    if (!first)
+        return "";
+    return isNorth(*first, findRole(Role::Second)) ? "north" : "south";
+}
+
 void DatasetBuilder::endRound()
 {
-    const Track *first = nullptr;
-    const Track *second = nullptr;
-
-    for (const auto &track : tracks)
-    {
-        if (track.role == Role::First)
-            first = &track;
-        else if (track.role == Role::Second)
-            second = &track;
-    }
+    const Track *first = findRole(Role::First);
+    const Track *second = findRole(Role::Second);
 
     // If one of the two played cards is missing, discard the round
     if (!first || !second)
@@ -375,10 +244,9 @@ void DatasetBuilder::endRound()
         return;
     }
 
-    // Spatial assignment: the topmost card is North
-    const bool firstIsNorth = first->rect.center.y < second->rect.center.y;
+    const bool firstIsNorth = isNorth(*first, second);
 
-    // Temporal check: the first card played must be the leader label
+    // Check: the first card played must be the leader label
     if (firstIsNorth != current.leaderNorth)
     {
         std::cout << "DISCARDED, position inconsistent with Leader ("

@@ -148,7 +148,7 @@ void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<
 }
 
 // Find cards in the frame by processing the image, detecting contours, filtering rectangles, and drawing them on the frame
-void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilder *builder = nullptr)
+void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilder *builder = nullptr, int motion = 0)
 {
     // Convert the frame to grayscale and apply Gaussian blur
     cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
@@ -164,6 +164,17 @@ void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilde
     // Find contours in the edges
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(edges, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+
+    // Second edge map: light blur and no closing
+    cv::Mat rawGray, rawEdges;
+    cv::cvtColor(frame, rawGray, cv::COLOR_BGR2GRAY);
+    cv::GaussianBlur(rawGray, rawGray, cv::Size(3, 3), 0);
+    cv::Canny(rawGray, rawEdges, 40.0, 90.0);
+
+    std::vector<std::vector<cv::Point>> rawContours;
+    cv::findContours(rawEdges, rawContours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+    // duplicates between the two maps are removed by filterRectangles
+    contours.insert(contours.end(), rawContours.begin(), rawContours.end());
 
     // Find new candidates
     int candidatesCounter = 0;
@@ -181,14 +192,15 @@ void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilde
 
     // Associate the rectangles with the round's cards (before drawing on the frame)
     if (builder)
-        builder->processFrame(frame, filteredRectangles);
+        builder->processFrame(frame, filteredRectangles, motion);
 
     // Draw the filtered rectangles on the frame
     drawRectangles(frame, filteredRectangles);
 }
 
 // Detect motion in the frame using background subtraction and display the motion mask
-void detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &frame, cv::Mat kernel, int &north, int &south)
+// Returns the side of the motion in the frame: 1 = North, -1 = South, 0 = no motion
+int detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &frame, cv::Mat kernel, int &north, int &south)
 {
     // Apply background subtraction to detect motion
     cv::Mat mask;
@@ -208,29 +220,29 @@ void detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &fr
 
     // m00 = n° white pixels in the mask
     if (moments.m00 == 0.0)
-        return; // No motion detected, skip further processing
+        return 0; // No motion detected, skip further processing
 
     double whiteRatio = moments.m00 / mask.total();
 
     if (whiteRatio < 0.02)
-        return; // Not enough motion detected, skip further processing
+        return 0; // Not enough motion detected, skip further processing
 
     // Calculate the centroid of the motion m10 = sum of x coordinates of white pixels, m01 = sum of y coordinates of white pixels
     cv::Point2f centroid(moments.m10 / moments.m00,
                          moments.m01 / moments.m00);
 
+    cv::imshow("Motion", mask);
+
     if (centroid.y < frame.rows / 2)
     {
         std::cout << "Motion detected in the North region, North: " << north << std::endl;
         north++;
-    }
-    else
-    {
-        std::cout << "Motion detected in the South region, South: " << south << std::endl;
-        south++;
+        return 1;
     }
 
-    cv::imshow("Motion", mask);
+    std::cout << "Motion detected in the South region, South: " << south << std::endl;
+    south++;
+    return -1;
 }
 
 bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder = nullptr)
@@ -261,8 +273,8 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
 
         // If the first card has not been detected yet, perform motion detection to find the first card
         // In dataset mode the Leader comes from the label: motion detection is not needed
-        if (!builder)
-            detectMotion(subtractor, frame, kernel2, north, south);
+        // Motion side is also used by the builder to know from which side each card arrives
+        const int motion = detectMotion(subtractor, frame, kernel2, north, south);
         if (!builder && !detected) {
             if (north >= 5)
             {
@@ -299,7 +311,7 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
         }
 
         // Find cards in the current frame
-        findCards(frame, grayFrame, kernel, builder);
+        findCards(frame, grayFrame, kernel, builder, motion);
 
         cv::imshow("Video Frame", frame);
 
