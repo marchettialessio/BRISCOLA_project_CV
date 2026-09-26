@@ -198,3 +198,50 @@ cv::Mat warpCard(const cv::Mat &frame, const cv::RotatedRect &rect, cv::Size siz
     cv::warpPerspective(frame, warped, transform, size);
     return warped;
 }
+
+int buildTrentineSet(const std::filesystem::path &scansDir, const std::filesystem::path &outDir, cv::Size size)
+{
+    const std::filesystem::path imagesDir = outDir / "images";
+    std::filesystem::create_directories(imagesDir);
+
+    const std::filesystem::path csvPath = outDir / "labels_trentine.csv";
+    std::ofstream csv(csvPath);
+    if (!csv.is_open())
+    {
+        std::cerr << "Could not create CSV: " << csvPath << std::endl;
+        return 0;
+    }
+    csv << "filename,class_id" << std::endl;
+
+    int saved = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(scansDir))
+    {
+        const std::string ext = toLower(entry.path().extension().string());
+        if (!entry.is_regular_file() || (ext != ".jpg" && ext != ".png"))
+            continue;
+
+        std::string stem = entry.path().stem().string();
+        std::replace(stem.begin(), stem.end(), '-', ',');
+        CardLabel card;
+        if (!parseCard(stem, card))
+        {
+            std::cerr << "Invalid scan name, skipped: " << entry.path().filename() << std::endl;
+            continue;
+        }
+
+        cv::Mat image = cv::imread(entry.path().string());
+        if (image.empty())
+            continue;
+        if (image.cols > image.rows)
+            cv::rotate(image, image, cv::ROTATE_90_CLOCKWISE);
+        cv::resize(image, image, size, 0, 0, cv::INTER_AREA);
+
+        const std::string name = "trentine_" + std::to_string(card.rank) + "_" + card.suitName + ".png";
+        cv::imwrite((imagesDir / name).string(), image);
+        csv << name << "," << card.classId << "\n";
+        saved++;
+    }
+
+    std::cout << "Trentine set: " << saved << " images saved in " << imagesDir << std::endl;
+    return saved;
+}

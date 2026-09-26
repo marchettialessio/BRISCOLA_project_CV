@@ -6,6 +6,9 @@
 #include <map>
 #include "DatasetBuilder.hpp"
 
+// false in modalità dataset: nessuna finestra, elaborazione più veloce
+bool showWindows = true;
+
 // Draw the detected rectangles on the frame
 void drawRectangles(cv::Mat &frame, const std::vector<cv::RotatedRect> &rectangles)
 {
@@ -231,7 +234,8 @@ int detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &fra
     cv::Point2f centroid(moments.m10 / moments.m00,
                          moments.m01 / moments.m00);
 
-    cv::imshow("Motion", mask);
+    if (showWindows)
+        cv::imshow("Motion", mask);
 
     if (centroid.y < frame.rows / 2)
     {
@@ -313,15 +317,19 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
         // Find cards in the current frame
         findCards(frame, grayFrame, kernel, builder, motion);
 
-        cv::imshow("Video Frame", frame);
+        if (showWindows)
+        {
+            cv::imshow("Video Frame", frame);
 
-        // Press ESC to skip video
-        if (cv::waitKey(builder ? 1 : 30) == 27)
-            break;
+            // Press ESC to skip video
+            if (cv::waitKey(builder ? 1 : 30) == 27)
+                break;
+        }
     }
 
     video.release();
-    cv::destroyAllWindows();
+    if (showWindows)
+        cv::destroyAllWindows();
 
     return true;
 }
@@ -340,6 +348,10 @@ int roundNumber(const std::filesystem::path &video)
 int main(int argc, char **argv)
 {
     const std::filesystem::path root(PROJECT_SOURCE_DIR);
+
+    if (argc > 1 && std::string(argv[1]) == "--trentine")
+        return buildTrentineSet(root / "Briscola" / "Briscola_Trentine", root / "dataset") > 0 ? 0 : 1;
+
     std::filesystem::path videoFolder = root / "Briscola" / "game1";
     std::filesystem::path outputFilePath = root / "output" / "game1output.txt";
 
@@ -354,6 +366,7 @@ int main(int argc, char **argv)
     std::ofstream outputFile(outputFilePath);
 
     const bool datasetMode = argc > 2 && std::string(argv[2]) == "--dataset";
+    showWindows = !datasetMode;
 
     // ordering videos by round number
     std::vector<std::filesystem::path> videos;
@@ -420,7 +433,7 @@ int main(int argc, char **argv)
             builder->endRound();
 
         // Press ESC to stop
-        if (cv::waitKey(builder ? 1 : 1000) == 27)
+        if (showWindows && cv::waitKey(builder ? 1 : 1000) == 27)
             break;
     }
 

@@ -42,3 +42,7 @@ cv::Mat thumbnail(const cv::Mat &crop);
 
 // Similarity between two thumbnails, tolerant to 180 degree rotation
 double similarity(const cv::Mat &a, const cv::Mat &b);
+
+// Genera il set dalle scansioni Trentine 
+int buildTrentineSet(const std::filesystem::path &scansDir, const std::filesystem::path &outDir,
+                     cv::Size size = cv::Size(200, 300));

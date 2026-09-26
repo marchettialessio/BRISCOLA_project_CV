@@ -18,7 +18,7 @@ DatasetBuilder::DatasetBuilder(const std::filesystem::path &outDir, int game, in
         std::cerr << "Could not create CSV: " << csvPath << std::endl;
     else
     // CSV header
-        csv << "filename,game,round,player,rank,suit,suit_name,class_id" << std::endl;
+        csv << "filename,class_id" << std::endl;
 }
 
 void DatasetBuilder::startRound(const RoundLabel &label)
@@ -141,6 +141,8 @@ void DatasetBuilder::processFrame(const cv::Mat &frame, const std::vector<cv::Ro
 
             track.refArea = rect.size.area(); // reference area for the confirmed card
             track.anchor = rect.center;
+            std::cout << "DBG confirm f" << frameIdx << " role " << static_cast<int>(track.role) << " born f" << track.firstSeen
+                      << " center " << rect.center << " size " << rect.size << " votes N" << track.northVotes << " S" << track.southVotes << std::endl;
         }
 
         // save crop for a track every cropEvery frames for played cards, only if still
@@ -194,8 +196,7 @@ void DatasetBuilder::saveCrops(const Track &track, const CardLabel &label, const
 
         cv::imwrite((imagesDir / name.str()).string(), crop);
 
-        csv << name.str() << "," << game << "," << current.round << "," << player << ","
-            << label.rank << "," << label.suit << "," << label.suitName << "," << label.classId << "\n";
+        csv << name.str() << "," << label.classId << "\n";
         savedCrops++;
     }
     csv.flush();
