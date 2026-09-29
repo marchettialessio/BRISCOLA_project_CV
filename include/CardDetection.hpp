@@ -1,0 +1,14 @@
+#include <opencv2/opencv.hpp>
+#include "DatasetBuilder.hpp"
+
+// Filter the detected rectangles based on overlap ratio and keep the larger ones and get the final cards
+void filterRectangles(std::vector<cv::RotatedRect> &candidates, std::vector<cv::RotatedRect> &filteredRectangles);
+
+// Check if the contour is a rectangle based on area, aspect ratio, and mean brightness
+bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::RotatedRect &candidate);
+
+// Detect the candidates from the contours and store them in the candidates vector, also update the rectanglesCounter
+void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<cv::RotatedRect> &candidates, cv::Mat grayFrame, int &rectanglesCounter);
+
+// Find cards in the frame by processing the image, detecting contours, filtering rectangles, and drawing them on the frame
+void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilder *builder = nullptr, int motion = 0);

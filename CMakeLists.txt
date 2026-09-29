@@ -17,4 +17,9 @@ function(add_task target_name source_file)
     target_compile_definitions(${target_name} PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     set_target_properties(${target_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 endfunction()
-add_task(main main.cpp "${SOURCE_DIR}/DatasetBuilder.cpp" "${SOURCE_DIR}/DatasetUtils.cpp")
+add_task(main main.cpp 
+            "${SOURCE_DIR}/DatasetBuilder.cpp" 
+            "${SOURCE_DIR}/DatasetUtils.cpp" 
+            "${SOURCE_DIR}/CardDetection.cpp" 
+            "${SOURCE_DIR}/MotionDetection.cpp" 
+            "${SOURCE_DIR}/Utility.cpp")
