@@ -39,3 +39,16 @@ int roundNumber(const std::filesystem::path &video)
         return std::stoi(match[1]);
     return -1;
 }
+
+// Check if a cli argument is an integer
+bool checkInteger(const std::string_view value) {
+    int result{};
+
+    const auto [pointer, error] = std::from_chars(value.data(), value.data() + value.size(), result);
+
+    const bool validSyntax =
+        error == std::errc{} &&
+        pointer == value.data() + value.size();
+
+    return validSyntax && result >= 1 && result <= 4;
+}

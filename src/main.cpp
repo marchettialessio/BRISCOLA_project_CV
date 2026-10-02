@@ -9,6 +9,8 @@
 #include "CardDetection.hpp"
 #include "MotionDetection.hpp"
 
+bool showWindows = true; // Global variable to control window display
+
 bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder, bool firstRound)
 {
     cv::VideoCapture video(path);
@@ -19,9 +21,10 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
     }
 
     cv::Mat frame, grayFrame;
+    // kernel used for card detection, used to link edges (CLOSING)
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 
-    cv::Mat kernel2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
+    // Background subtractor for motion detection
     cv::Ptr<cv::BackgroundSubtractorMOG2> subtractor = cv::createBackgroundSubtractorMOG2(500, 16, true);
     int north = 0, south = 0; // Votes for the first card detection
     bool detected = false; // Flag to indicate if the first card has been detected
@@ -47,7 +50,7 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
         // If the first card has not been detected yet, perform motion detection to find the first card
         // In dataset mode the Leader comes from the label: motion detection is not needed
         // Motion side is also used by the builder to know from which side each card arrives
-        const int motion = detectMotion(subtractor, frame, kernel2, north, south);
+        const int motion = detectMotion(subtractor, frame, north, south, showWindows);
         if (!builder && !detected) {
             if (north >= 5)
             {
@@ -57,8 +60,9 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                 if (outputFile.is_open())
                 {
                     outputFile << "Leader: North" << std::endl;
-                    outputFile.flush(); // Ensure the output is written to the file immediately
-                    // return true; // Exit the function after writing to the output file
+                    
+                    //outputFile.flush(); // Ensure the output is written to the file immediately
+                    return true; // Exit the function after writing to the output file
                 }
                 else
                 {
@@ -73,9 +77,9 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                 if (outputFile.is_open())
                 {
                     outputFile << "Leader: South" << std::endl;
-                    outputFile.flush(); // Ensure the output is written to the file immediately
-                    // To be commented in the final version
-                    // return true; // Process the next round after writing to the output file
+                    
+                    //outputFile.flush(); // Ensure the output is written to the file immediately
+                    return true; // Process the next round after writing to the output file
                 }
                 else
                 {
@@ -112,22 +116,19 @@ int main(int argc, char **argv)
     if (argc > 1 && std::string(argv[1]) == "--trentine")
         return buildTrentineSet(root / "Briscola" / "Briscola_Trentine", root / "dataset") > 0 ? 0 : 1;
 
-    std::filesystem::path videoFolder = root / "Briscola" / "game1";
-    std::filesystem::path outputFilePath = root / "output" / "game1output.txt";
+    const bool datasetMode = argc > 2 && std::string(argv[2]) == "--dataset";
+    showWindows = !datasetMode;
 
     std::string game = "1";
-    if (argc > 1)
-    {
+    if (argc > 1 && checkInteger(argv[1])) {
         game = argv[1];
-        videoFolder = root / "Briscola" / ("game" + game);
-        outputFilePath = root / "output" / ("game" + game + "output.txt");
     }
+    std::filesystem::path videoFolder = root / "Briscola" / ("game" + game);
+    std::filesystem::path outputFilePath = root / "output" / ("game" + game + "output.txt");
 
     std::ofstream outputFile(outputFilePath);
 
-    const bool datasetMode = argc > 2 && std::string(argv[2]) == "--dataset";
-
-    // ordering videos by round number
+    
     std::vector<std::filesystem::path> videos;
     for (const auto &video : std::filesystem::directory_iterator(videoFolder))
     {
@@ -135,6 +136,7 @@ int main(int argc, char **argv)
             continue;
         videos.push_back(video.path());
     }
+    // ordering videos by round number
     std::sort(videos.begin(), videos.end(), [](const auto &a, const auto &b)
               { return roundNumber(a) < roundNumber(b); });
 
@@ -166,7 +168,8 @@ int main(int argc, char **argv)
         if (outputFile.is_open())
         {
             outputFile << "Round " << round << std::endl;
-            outputFile.flush(); // Ensure the output is written to the file immediately
+
+            //outputFile.flush(); // Ensure the output is written to the file immediately
         }
         else
         {
@@ -199,4 +202,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-

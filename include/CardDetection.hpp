@@ -1,4 +1,5 @@
-#pragma once
+#ifndef CARD_DETECTION_HPP
+#define CARD_DETECTION_HPP
 
 #include <opencv2/opencv.hpp>
 #include "DatasetBuilder.hpp"
@@ -19,3 +20,5 @@ void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilde
 
 // Find the face-up Briscola card among relaxed rectangle candidates
 bool findBriscola(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, cv::RotatedRect &briscola);
+
+#endif // CARD_DETECTION_HPP
