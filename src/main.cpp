@@ -9,13 +9,9 @@
 #include "CardDetection.hpp"
 #include "MotionDetection.hpp"
 
-// false in modalità dataset: nessuna finestra, elaborazione più veloce
-bool showWindows = true;
-
-bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder = nullptr)
+bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder, bool firstRound)
 {
     cv::VideoCapture video(path);
-
     if (!video.isOpened())
     {
         std::cerr << "Could not open the video: " << path << std::endl;
@@ -29,7 +25,9 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
     cv::Ptr<cv::BackgroundSubtractorMOG2> subtractor = cv::createBackgroundSubtractorMOG2(500, 16, true);
     int north = 0, south = 0; // Votes for the first card detection
     bool detected = false; // Flag to indicate if the first card has been detected
-
+    bool briscolaFixed = false;
+    cv::RotatedRect briscola;
+    int frameIndex = 0;
     while (true)
     {
         if (!video.read(frame) || frame.empty())
@@ -38,10 +36,18 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
             break;
         }
 
+        if (firstRound && frameIndex < 5 && !briscolaFixed)
+        {
+            briscolaFixed = findBriscola(frame, grayFrame, kernel, briscola);
+            if (frameIndex == 4 && !briscolaFixed)
+            {
+                std::cout << "Briscola non trovata nei primi 5 frame." << std::endl;
+            }
+        }
         // If the first card has not been detected yet, perform motion detection to find the first card
         // In dataset mode the Leader comes from the label: motion detection is not needed
         // Motion side is also used by the builder to know from which side each card arrives
-        const int motion = detectMotion(subtractor, frame, kernel2, north, south, showWindows);
+        const int motion = detectMotion(subtractor, frame, kernel2, north, south);
         if (!builder && !detected) {
             if (north >= 5)
             {
@@ -80,21 +86,22 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
 
         // Find cards in the current frame
         findCards(frame, grayFrame, kernel, builder, motion);
-
-        if (showWindows)
-        {
-            cv::imshow("Video Frame", frame);
-
-            // Press ESC to skip video
-            if (cv::waitKey(builder ? 1 : 30) == 27)
-                break;
-        }
+        if (briscolaFixed && frameIndex < 5)
+            {
+                drawRectangles(frame, {briscola});
+                const cv::Rect bounds = briscola.boundingRect();
+                std::cout << "Briscola trovata al frame " << frameIndex + 1 << std::endl;
+            }
+        ++frameIndex;
+        cv::imshow("Video Frame", frame);
+        // Press ESC to skip video
+        if (cv::waitKey(builder ? 1 : 30) == 27)
+            break;
+        
     }
 
     video.release();
-    if (showWindows)
-        cv::destroyAllWindows();
-
+    cv::destroyAllWindows();
     return true;
 }
 
@@ -119,7 +126,6 @@ int main(int argc, char **argv)
     std::ofstream outputFile(outputFilePath);
 
     const bool datasetMode = argc > 2 && std::string(argv[2]) == "--dataset";
-    showWindows = !datasetMode;
 
     // ordering videos by round number
     std::vector<std::filesystem::path> videos;
@@ -152,7 +158,7 @@ int main(int argc, char **argv)
 
         builder = std::make_unique<DatasetBuilder>(root / "dataset", std::stoi(game));
     }
-
+    bool firstRound=true;
     for (const auto &video : videos)
     {
         const int round = roundNumber(video);
@@ -179,16 +185,18 @@ int main(int argc, char **argv)
         }
 
         std::cout << "Processing video: " << video << std::endl;
-        if (!processVideo(video.string(), outputFile, builder.get()))
+        if (!processVideo(video.string(), outputFile, builder.get(), firstRound))
             break;
+        firstRound = false;
 
         if (builder)
             builder->endRound();
 
         // Press ESC to stop
-        if (showWindows && cv::waitKey(builder ? 1 : 1000) == 27)
+        if (cv::waitKey(builder ? 1 : 1000) == 27)
             break;
     }
 
     return 0;
 }
+

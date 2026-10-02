@@ -2,7 +2,7 @@
 
 // Detect motion in the frame using background subtraction and display the motion mask
 // Returns the side of the motion in the frame: 1 = North, -1 = South, 0 = no motion
-int detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &frame, cv::Mat kernel, int &north, int &south, bool showWindows)
+int detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &frame, cv::Mat kernel, int &north, int &south)
 {
     // Apply background subtraction to detect motion
     cv::Mat mask;
@@ -32,9 +32,7 @@ int detectMotion(cv::Ptr<cv::BackgroundSubtractorMOG2> &subtractor, cv::Mat &fra
     // Calculate the centroid of the motion m10 = sum of x coordinates of white pixels, m01 = sum of y coordinates of white pixels
     cv::Point2f centroid(moments.m10 / moments.m00,
                          moments.m01 / moments.m00);
-
-    if (showWindows)
-        cv::imshow("Motion", mask);
+    cv::imshow("Motion", mask);
 
     if (centroid.y < frame.rows / 2)
     {
