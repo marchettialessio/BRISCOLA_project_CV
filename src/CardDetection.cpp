@@ -130,7 +130,7 @@ void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<
 }
 
 // Find cards in the frame by processing the image, detecting contours, filtering rectangles, and drawing them on the frame
-void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilder *builder, int motion)
+std::vector<cv::RotatedRect> findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilder *builder, int motion)
 {
     // Convert the frame to grayscale and apply Gaussian blur
     cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
@@ -178,6 +178,7 @@ void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilde
 
     // Draw the filtered rectangles on the frame
     drawRectangles(frame, filteredRectangles);
+    return filteredRectangles;
 }
 
 bool findBriscola(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, cv::RotatedRect &briscola)

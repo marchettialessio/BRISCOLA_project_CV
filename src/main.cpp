@@ -6,12 +6,14 @@
 #include <map>
 #include "DatasetBuilder.hpp"
 #include "Utility.hpp"
+#include "CardReconDiff.hpp"
 #include "CardDetection.hpp"
 #include "MotionDetection.hpp"
 
 bool showWindows = true; // Global variable to control window display
 
-bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder, bool firstRound)
+bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder, bool firstRound,
+                 const std::filesystem::path &templateFolder)
 {
     cv::VideoCapture video(path);
     if (!video.isOpened())
@@ -30,7 +32,12 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
     bool detected = false; // Flag to indicate if the first card has been detected
     bool briscolaFixed = false;
     cv::RotatedRect briscola;
+    std::map<std::string, int> cardVotes;
+    std::string firstCard;
+    std::string secondCard;
     int frameIndex = 0;
+    cv::namedWindow("Video Frame", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Video Frame", 800, 450);
     while (true)
     {
         if (!video.read(frame) || frame.empty())
@@ -62,7 +69,7 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                     outputFile << "Leader: North" << std::endl;
                     
                     //outputFile.flush(); // Ensure the output is written to the file immediately
-                    return true; // Exit the function after writing to the output file
+                    //return true; // Exit the function after writing to the output file
                 }
                 else
                 {
@@ -79,7 +86,7 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                     outputFile << "Leader: South" << std::endl;
                     
                     //outputFile.flush(); // Ensure the output is written to the file immediately
-                    return true; // Process the next round after writing to the output file
+                    //return true; // Process the next round after writing to the output file
                 }
                 else
                 {
@@ -89,13 +96,42 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
         }
 
         // Find cards in the current frame
-        findCards(frame, grayFrame, kernel, builder, motion);
+    cv::Mat recognitionFrame = frame.clone();
+        std::vector<cv::RotatedRect> finalRect = findCards(frame, grayFrame, kernel, builder, motion);
         if (briscolaFixed && frameIndex < 5)
             {
                 drawRectangles(frame, {briscola});
                 const cv::Rect bounds = briscola.boundingRect();
                 std::cout << "Briscola trovata al frame " << frameIndex + 1 << std::endl;
             }
+
+        for (const auto &rect : finalRect)
+        {
+            if (!secondCard.empty())
+                break;
+
+            const std::string recognized = ReconCard(recognitionFrame, rect, templateFolder);
+            if (recognized.empty() || recognized == firstCard)
+                continue;
+
+            ++cardVotes[recognized];
+            std::cout << "Voto per " << recognized << ": " << cardVotes[recognized] << std::endl;
+
+            if (cardVotes[recognized] >= 3)
+            {
+                if (firstCard.empty())
+                {
+                    firstCard = recognized;
+                    cardVotes.clear();
+                    std::cout << "Prima carta riconosciuta: " << firstCard << std::endl;
+                }
+                else
+                {
+                    secondCard = recognized;
+                    std::cout << "Seconda carta riconosciuta: " << secondCard << std::endl;
+                }
+            }
+        }
         ++frameIndex;
         cv::imshow("Video Frame", frame);
         // Press ESC to skip video
@@ -188,7 +224,7 @@ int main(int argc, char **argv)
         }
 
         std::cout << "Processing video: " << video << std::endl;
-        if (!processVideo(video.string(), outputFile, builder.get(), firstRound))
+        if (!processVideo(video.string(), outputFile, builder.get(), firstRound, root / "Briscola" / "Briscola_Trentine"))
             break;
         firstRound = false;
 

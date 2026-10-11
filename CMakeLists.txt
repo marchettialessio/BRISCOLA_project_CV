@@ -22,4 +22,5 @@ add_task(main main.cpp
             "${SOURCE_DIR}/DatasetUtils.cpp" 
             "${SOURCE_DIR}/CardDetection.cpp" 
             "${SOURCE_DIR}/MotionDetection.cpp" 
-            "${SOURCE_DIR}/Utility.cpp")
+            "${SOURCE_DIR}/Utility.cpp"
+            "${SOURCE_DIR}/CardReconDiff.cpp")
