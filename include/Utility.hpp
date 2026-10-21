@@ -6,10 +6,10 @@
 #include <regex>
 
 struct Card {
-    std::string id;
-    int number;
-    std::string seed;
-    int points;
+    std::string id;     // e.g., "10-clubs"
+    int number;         // e.g., 10
+    std::string seed;   // e.g., "clubs"
+    int points;         // e.g., 4
 };
 
 struct RoundResults {
@@ -18,9 +18,9 @@ struct RoundResults {
 };
 
 struct Player {
-    std::string position;
+    std::string position;       // "North" or "South"
     int points;
-    std::optional<Card> card;
+    std::optional<Card> card;       // The card played by the player in the current round
 };
 
 // Draw the detected rectangles on the frame

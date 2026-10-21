@@ -50,15 +50,6 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
             break;
         }
 
-        if (firstRound && frameIndex < 5 && !briscolaFixed)
-        {
-            briscolaFixed = findBriscola(frame, grayFrame, kernel, briscola);
-            if (frameIndex == 4 && !briscolaFixed)
-            {
-                std::cout << "Briscola non trovata nei primi 5 frame." << std::endl;
-            }
-        }
-
         // If the first card has not been detected yet, perform motion detection to find the first card
         // In dataset mode the Leader comes from the label: motion detection is not needed
         // Motion side is also used by the builder to know from which side each card arrives
@@ -73,6 +64,15 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
             {
                 leader = "South";
                 std::cout << "Leader: " << leader << std::endl;
+            }
+        }
+
+        if (firstRound && frameIndex < 5 && !briscolaFixed)
+        {
+            briscolaFixed = findBriscola(frame, grayFrame, kernel, briscola);
+            if (frameIndex == 4 && !briscolaFixed)
+            {
+                std::cout << "Briscola non trovata nei primi 5 frame." << std::endl;
             }
         }
 
