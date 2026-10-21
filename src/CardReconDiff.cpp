@@ -138,6 +138,7 @@ std::string ReconCard(const cv::Mat& frame, cv::RotatedRect card, const fs::path
     cv::Mat rectified = rectangleOmography(frame, polygon);
     if (rectified.empty())
     {
+        std::cerr << "Errore: impossibile rettificare la carta." << std::endl;
         return "";
     }
     cv::imshow("Omografia carta", rectified);
@@ -196,14 +197,14 @@ std::string ReconCard(const cv::Mat& frame, cv::RotatedRect card, const fs::path
         }
     }
 
-    std::cout << "miglior match = " << bestMatch.filename().string() << " (grigio = " << bestGrayDifference
+    std::cout << "miglior match = " << bestMatch.stem().string() << " (grigio = " << bestGrayDifference
             << ", HSV = " << bestHsvDifference
             << ", combinata = " << bestDifference << ")" << std::endl;
     if (bestDifference > maxDifference || bestGrayDifference>60)
     {
-        std::cout << "Match scartato: differenza sopra la soglia " << maxDifference << std::endl;
+        std::cerr << "Match scartato: differenza sopra la soglia " << maxDifference << std::endl;
         return "";
     }
 
-    return bestMatch.filename().string();
+    return bestMatch.stem().string();
 }

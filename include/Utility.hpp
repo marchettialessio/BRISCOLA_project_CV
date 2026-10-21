@@ -5,6 +5,24 @@
 #include <filesystem>
 #include <regex>
 
+struct Card {
+    std::string id;
+    int number;
+    std::string seed;
+    int points;
+};
+
+struct RoundResults {
+    int points;
+    std::string winner;
+};
+
+struct Player {
+    std::string position;
+    int points;
+    std::optional<Card> card;
+};
+
 // Draw the detected rectangles on the frame
 void drawRectangles(cv::Mat &frame, const std::vector<cv::RotatedRect> &rectangles);
 
@@ -16,5 +34,11 @@ int roundNumber(const std::filesystem::path &video);
 
 // Check if a cli argument is an integer
 bool checkInteger(const std::string_view value);
+
+// Create a Card object from a template image path
+struct Card createCard(const std::string templatePath);
+
+// Get the round results based on the leader and the cards played and print them
+RoundResults getRoundResults(int round, std::string leader, const Card &firstCard, const Card &secondCard, int &pointsPlayerNorth, int &pointsPlayerSouth);
 
 #endif // UTILITY_HPP
