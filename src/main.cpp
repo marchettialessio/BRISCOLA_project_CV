@@ -6,16 +6,16 @@
 #include <map>
 #include "DatasetBuilder.hpp"
 #include "Utility.hpp"
+#include "CardReconDiff.hpp"
 #include "CardDetection.hpp"
 #include "MotionDetection.hpp"
 
-// false in modalità dataset: nessuna finestra, elaborazione più veloce
-bool showWindows = true;
+bool showWindows = true; // Global variable to control window display
 
-bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder = nullptr)
+bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder, bool firstRound,
+                 const std::filesystem::path &templateFolder, int round, Player &playerNorth, Player &playerSouth)
 {
     cv::VideoCapture video(path);
-
     if (!video.isOpened())
     {
         std::cerr << "Could not open the video: " << path << std::endl;
@@ -23,12 +23,24 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
     }
 
     cv::Mat frame, grayFrame;
+    // kernel used for card detection, used to link edges (CLOSING)
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 
-    cv::Mat kernel2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
+    // Background subtractor for motion detection
     cv::Ptr<cv::BackgroundSubtractorMOG2> subtractor = cv::createBackgroundSubtractorMOG2(500, 16, true);
     int north = 0, south = 0; // Votes for the first card detection
-    bool detected = false; // Flag to indicate if the first card has been detected
+    std::string leader; // Leader side (North or South)
+
+    bool briscolaFixed = false;
+    cv::RotatedRect briscola;
+
+    std::map<std::string, int> cardVotes;
+    std::optional<Card> firstCard;
+    std::optional<Card> secondCard;
+
+    int frameIndex = 0;
+    cv::namedWindow("Video Frame", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Video Frame", 800, 450);
 
     while (true)
     {
@@ -41,60 +53,131 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
         // If the first card has not been detected yet, perform motion detection to find the first card
         // In dataset mode the Leader comes from the label: motion detection is not needed
         // Motion side is also used by the builder to know from which side each card arrives
-        const int motion = detectMotion(subtractor, frame, kernel2, north, south, showWindows);
-        if (!builder && !detected) {
+        const int motion = detectMotion(subtractor, frame, north, south, showWindows);
+        if (!builder && leader == "") {
             if (north >= 5)
             {
-                std::cout << "Leader: North" << std::endl;
-                detected = true; // Set the flag to true after the first card is detected
-
-                if (outputFile.is_open())
-                {
-                    outputFile << "Leader: North" << std::endl;
-                    outputFile.flush(); // Ensure the output is written to the file immediately
-                    // return true; // Exit the function after writing to the output file
-                }
-                else
-                {
-                    std::cerr << "Failed to write to output file." << std::endl;
-                }
+                leader = "North";
+                std::cout << "Leader: " << leader << std::endl;
             }
             else if (south >= 5)
             {
-                std::cout << "Leader: South" << std::endl;
-                detected = true; // Set the flag to true after the first card is detected
+                leader = "South";
+                std::cout << "Leader: " << leader << std::endl;
+            }
+        }
 
-                if (outputFile.is_open())
-                {
-                    outputFile << "Leader: South" << std::endl;
-                    outputFile.flush(); // Ensure the output is written to the file immediately
-                    // To be commented in the final version
-                    // return true; // Process the next round after writing to the output file
-                }
-                else
-                {
-                    std::cerr << "Failed to write to output file." << std::endl;
-                }
+        if (firstRound && frameIndex < 5 && !briscolaFixed)
+        {
+            briscolaFixed = findBriscola(frame, grayFrame, kernel, briscola);
+            if (frameIndex == 4 && !briscolaFixed)
+            {
+                std::cout << "Briscola non trovata nei primi 5 frame." << std::endl;
             }
         }
 
         // Find cards in the current frame
-        findCards(frame, grayFrame, kernel, builder, motion);
-
-        if (showWindows)
+        cv::Mat recognitionFrame = frame.clone();
+        std::vector<cv::RotatedRect> finalRect = findCards(frame, grayFrame, kernel, builder, motion);
+        if (briscolaFixed && frameIndex < 5)
         {
-            cv::imshow("Video Frame", frame);
-
-            // Press ESC to skip video
-            if (cv::waitKey(builder ? 1 : 30) == 27)
-                break;
+            drawRectangles(frame, {briscola});
+            const cv::Rect bounds = briscola.boundingRect();
+            std::cout << "Briscola trovata al frame " << frameIndex + 1 << std::endl;
         }
+
+        for (const auto &rect : finalRect)
+        {
+            std::string recognized = ReconCard(recognitionFrame, rect, templateFolder);
+            if (recognized == "" || firstCard && recognized == firstCard->id)
+                continue;
+
+            ++cardVotes[recognized];
+            std::cout << "Voto per " << recognized << ": " << cardVotes[recognized] << std::endl;
+
+            if (cardVotes[recognized] >= 3)
+            {
+                if (!firstCard)
+                {
+                    // Create the first card object and assign it to the appropriate player
+                    try {
+                        firstCard = createCard(recognized);
+                        std::cout << "Prima carta riconosciuta: " << secondCard->id 
+                                  << " Number: " << secondCard->number 
+                                  << " Seed: " << secondCard->seed 
+                                  << " Points: " << secondCard->points << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << e.what() << std::endl;
+                    }
+
+                    if (leader == "North") {
+                        playerNorth.card = *firstCard;
+                        std::cout << "Assigned first card to North player" << std::endl;
+                    } else if (leader == "South") {
+                        playerSouth.card = *firstCard;
+                        std::cout << "Assigned first card to South player" << std::endl;
+                    }
+
+                    cardVotes.clear();
+                }
+                else
+                {
+                    // Create the second card object and assign it to the appropriate player
+                    try {
+                        secondCard = createCard(recognized);
+                        std::cout << "Seconda carta riconosciuta: " << secondCard->id 
+                                  << " Number: " << secondCard->number 
+                                  << " Seed: " << secondCard->seed 
+                                  << " Points: " << secondCard->points << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << e.what() << std::endl;
+                    }
+
+                    if (leader == "North") {
+                        playerSouth.card = *secondCard;
+                        std::cout << "Assigned second card to North player" << std::endl;
+                    } else if (leader == "South") {
+                        playerNorth.card = *secondCard;
+                        std::cout << "Assigned second card to South player" << std::endl;
+                    }
+                }
+            }
+        }
+        if (secondCard) {
+            RoundResults results = getRoundResults(round, leader, *firstCard, *secondCard, playerNorth.points, playerSouth.points);
+            if(!outputFile.is_open()) {
+                std::cerr << "Unable to open output file." << std::endl;
+            } else {
+                outputFile << "Round " << round << '\n'
+                           << "North : " << playerNorth.card->number << " , " << playerNorth.card->seed << '\n'
+                           << "South : " << playerSouth.card->number << " , " << playerSouth.card->seed << '\n'
+                           << "Briscola : " << '\n'
+                           << "Leader : " << leader << '\n'
+                           << "Winner : " << results.winner << '\n'
+                           << "Points : " << results.points << std::endl;
+
+                std::cout << "Printed round results" << std::endl;
+            }
+
+            // TODO: delete this in the final version, it's just for testing
+            playerNorth.card = {};
+            playerSouth.card = {};
+            break;
+        }
+
+        playerNorth.card = {};
+        playerSouth.card = {};
+
+        ++frameIndex;
+        cv::imshow("Video Frame", frame);
+        // Press ESC to skip video
+        if (cv::waitKey(builder ? 1 : 30) == 27)
+            break;
+        
     }
 
     video.release();
-    if (showWindows)
-        cv::destroyAllWindows();
-
+    cv::destroyAllWindows();
     return true;
 }
 
@@ -105,23 +188,18 @@ int main(int argc, char **argv)
     if (argc > 1 && std::string(argv[1]) == "--trentine")
         return buildTrentineSet(root / "Briscola" / "Briscola_Trentine", root / "dataset") > 0 ? 0 : 1;
 
-    std::filesystem::path videoFolder = root / "Briscola" / "game1";
-    std::filesystem::path outputFilePath = root / "output" / "game1output.txt";
-
-    std::string game = "1";
-    if (argc > 1)
-    {
-        game = argv[1];
-        videoFolder = root / "Briscola" / ("game" + game);
-        outputFilePath = root / "output" / ("game" + game + "output.txt");
-    }
-
-    std::ofstream outputFile(outputFilePath);
-
     const bool datasetMode = argc > 2 && std::string(argv[2]) == "--dataset";
     showWindows = !datasetMode;
 
-    // ordering videos by round number
+    std::string game = "1";
+    if (argc > 1 && checkInteger(argv[1])) {
+        game = argv[1];
+    }
+    std::filesystem::path videoFolder = root / "Briscola" / ("game" + game);
+    std::filesystem::path outputFilePath = root / "output" / ("game" + game + "output.txt");
+
+    std::ofstream outputFile(outputFilePath);
+
     std::vector<std::filesystem::path> videos;
     for (const auto &video : std::filesystem::directory_iterator(videoFolder))
     {
@@ -129,6 +207,7 @@ int main(int argc, char **argv)
             continue;
         videos.push_back(video.path());
     }
+    // ordering videos by round number
     std::sort(videos.begin(), videos.end(), [](const auto &a, const auto &b)
               { return roundNumber(a) < roundNumber(b); });
 
@@ -152,20 +231,17 @@ int main(int argc, char **argv)
 
         builder = std::make_unique<DatasetBuilder>(root / "dataset", std::stoi(game));
     }
+    
+    std::filesystem::path templateFolder = root / "resources" / "cards";
+
+    bool firstRound = true;
+    int round = 0;
+    Player playerNorth = {"North", 0, {}};
+    Player playerSouth = {"South", 0, {}};
 
     for (const auto &video : videos)
     {
-        const int round = roundNumber(video);
-
-        if (outputFile.is_open())
-        {
-            outputFile << "Round " << round << std::endl;
-            outputFile.flush(); // Ensure the output is written to the file immediately
-        }
-        else
-        {
-            std::cerr << "Failed to open output file." << std::endl;
-        }
+        round = roundNumber(video);
 
         if (builder)
         {
@@ -179,16 +255,30 @@ int main(int argc, char **argv)
         }
 
         std::cout << "Processing video: " << video << std::endl;
-        if (!processVideo(video.string(), outputFile, builder.get()))
+        if (!processVideo(video.string(), outputFile, builder.get(), firstRound, templateFolder, round, playerNorth, playerSouth))
             break;
+        
+        firstRound = false;
 
         if (builder)
             builder->endRound();
 
         // Press ESC to stop
-        if (showWindows && cv::waitKey(builder ? 1 : 1000) == 27)
+        if (cv::waitKey(builder ? 1 : 1000) == 27)
             break;
     }
+
+    if (!outputFile.is_open()) {
+            std::cerr << "Unable to open output file." << std::endl;
+        } else {
+            std::string winner = (playerNorth.points > playerSouth.points) ? "North" : "South";
+            outputFile << "----" << '\n'
+                       << "Winner : " << winner << '\n'
+                       << "Total Points South: " << playerSouth.points << '\n'
+                       << "Total Points North: " << playerNorth.points << std::endl;
+
+            std::cout << "Printed final results" << std::endl;
+        }
 
     return 0;
 }

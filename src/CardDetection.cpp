@@ -38,14 +38,30 @@ void filterRectangles(std::vector<cv::RotatedRect> &candidates, std::vector<cv::
 }
 
 // Check if the contour is a rectangle based on area, aspect ratio, and mean brightness
-bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::RotatedRect &candidate)
+bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::RotatedRect &candidate, bool briscola)
 {
     double area = cv::contourArea(contour);
 
     double frameArea = grayFrame.rows * grayFrame.cols;
+    double frame_ratio;
+    double area_ratio;
+    double min_ratio_length;
+    double max_ratio_length;
+    if(briscola){
+        frame_ratio=0.001;
+        area_ratio=0.3;
+        min_ratio_length=0.8f;
+        max_ratio_length=1.8f;
+    }
+    else{
+        frame_ratio=0.01;
+        area_ratio=0.3;
+        min_ratio_length=1.4f;
+        max_ratio_length=2.2f;
+    }
 
     // Filter out small contours based on area
-    if (area < 0.01 * frameArea || area > 0.3 * frameArea)
+    if (area < frame_ratio * frameArea || area > area_ratio * frameArea)
         return false;
 
     double perimeter = cv::arcLength(contour, true);
@@ -80,7 +96,7 @@ bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::Rotated
     float aspectRatio = std::max(width, height) / std::min(width, height);
 
     // Filter out contours that do not match the expected aspect ratio of a card
-    if (aspectRatio < 1.4f || aspectRatio > 2.2f)
+    if (aspectRatio < min_ratio_length || aspectRatio > max_ratio_length)
         return false;
 
     // Check if the detected rectangle is within the frame boundaries
@@ -99,13 +115,13 @@ bool isRectangle(cv::Mat &grayFrame, std::vector<cv::Point> contour, cv::Rotated
 }
 
 // Detect the candidates from the contours and store them in the candidates vector, also update the rectanglesCounter
-void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<cv::RotatedRect> &candidates, cv::Mat grayFrame, int &rectanglesCounter)
+void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<cv::RotatedRect> &candidates, cv::Mat grayFrame, int &rectanglesCounter, bool briscola)
 {
     for (const auto &contour : contours)
     {
         // Check if the contour is a rectangle
         cv::RotatedRect candidate;
-        if (isRectangle(grayFrame, contour, candidate))
+        if (isRectangle(grayFrame, contour, candidate, briscola))
         {
             rectanglesCounter++;
             candidates.push_back(candidate);
@@ -114,7 +130,7 @@ void detectCandidates(std::vector<std::vector<cv::Point>> contours, std::vector<
 }
 
 // Find cards in the frame by processing the image, detecting contours, filtering rectangles, and drawing them on the frame
-void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilder *builder, int motion)
+std::vector<cv::RotatedRect> findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilder *builder, int motion)
 {
     // Convert the frame to grayscale and apply Gaussian blur
     cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
@@ -146,7 +162,7 @@ void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilde
     int candidatesCounter = 0;
     std::vector<cv::RotatedRect> candidates;
 
-    detectCandidates(contours, candidates, grayFrame, candidatesCounter);
+    detectCandidates(contours, candidates, grayFrame, candidatesCounter, false);
     std::cout << "Detected candidates: " << candidatesCounter << std::endl;
 
     // Filter the detected candidates to get the cards
@@ -162,4 +178,35 @@ void findCards(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, DatasetBuilde
 
     // Draw the filtered rectangles on the frame
     drawRectangles(frame, filteredRectangles);
+    return filteredRectangles;
+}
+
+bool findBriscola(cv::Mat &frame, cv::Mat &grayFrame, cv::Mat kernel, cv::RotatedRect &briscola)
+{
+    cv::cvtColor(frame, grayFrame, cv::COLOR_BGR2GRAY);
+    cv::GaussianBlur(grayFrame, grayFrame, cv::Size(5, 5), 0);
+
+    cv::Mat edges;
+    cv::Canny(grayFrame, edges, 25.0, 90.0);
+    cv::morphologyEx(edges, edges, cv::MORPH_CLOSE, kernel);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(edges, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+
+    std::vector<cv::RotatedRect> candidates;
+    int candidatesCounter = 0;
+    detectCandidates(contours, candidates, grayFrame, candidatesCounter, true);
+
+    std::vector<cv::RotatedRect> filteredRectangles;
+    filterRectangles(candidates, filteredRectangles);
+    if (filteredRectangles.empty())
+        return false;
+
+    briscola = filteredRectangles.front();
+    for (const auto &rectangle : filteredRectangles)
+    {
+        if (rectangle.size.area() < briscola.size.area())
+            briscola = rectangle;
+    }
+    return true;
 }

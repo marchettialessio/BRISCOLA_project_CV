@@ -24,4 +24,5 @@ add_task(main main.cpp
             "${SOURCE_DIR}/CardTracker.cpp"
             "${SOURCE_DIR}/CardDetection.cpp"
             "${SOURCE_DIR}/MotionDetection.cpp"
-            "${SOURCE_DIR}/utility.cpp")
+            "${SOURCE_DIR}/utility.cpp"
+            "${SOURCE_DIR}/CardReconDiff.cpp")
