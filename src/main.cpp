@@ -185,6 +185,7 @@ int main(int argc, char **argv)
 {
     const std::filesystem::path root(PROJECT_SOURCE_DIR);
 
+    // if I want to build the Trentine dataset
     if (argc > 1 && std::string(argv[1]) == "--trentine")
         return buildTrentineSet(root / "Briscola" / "Briscola_Trentine", root / "dataset") > 0 ? 0 : 1;
 
@@ -213,7 +214,7 @@ int main(int argc, char **argv)
 
     std::unique_ptr<DatasetBuilder> builder;
 
-    // load game labels, indexed by round
+    // load game labels, indexed by round, needed for dataset building mode
     std::map<int, RoundLabel> labels;
     if (datasetMode)
     {
