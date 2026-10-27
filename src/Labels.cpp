@@ -78,6 +78,46 @@ CardLabel cardFromClassId(int classId)
     return card;
 }
 
+CardLabel cardFromName(const std::string &name)
+{
+    std::string value = name;
+    std::replace(value.begin(), value.end(), '-', ',');
+
+    CardLabel card;
+    if (!parseCard(value, card))
+        return CardLabel{}; // invalid card
+    return card;
+}
+
+int CardLabel::points() const
+{
+    switch (rank)
+    {
+    case 1:
+        return 11;
+    case 3:
+        return 10;
+    case 8:
+        return 2;
+    case 9:
+        return 3;
+    case 10:
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+std::string CardLabel::name() const
+{
+    return std::to_string(rank) + "-" + suitName;
+}
+
+std::string CardLabel::toString() const
+{
+    return std::to_string(rank) + " , " + suitName;
+}
+
 // i want to parse the label file and return the game: one RoundLabel for each round + final result
 GameLabel parseGame(const std::filesystem::path &file)
 {

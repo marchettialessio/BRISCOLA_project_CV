@@ -35,8 +35,8 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
     cv::RotatedRect briscola;
 
     std::map<std::string, int> cardVotes;
-    std::optional<Card> firstCard;
-    std::optional<Card> secondCard;
+    std::optional<CardLabel> firstCard;
+    std::optional<CardLabel> secondCard;
 
     int frameIndex = 0;
     cv::namedWindow("Video Frame", cv::WINDOW_NORMAL);
@@ -53,7 +53,7 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
         // If the first card has not been detected yet, perform motion detection to find the first card
         // In dataset mode the Leader comes from the label: motion detection is not needed
         // Motion side is also used by the builder to know from which side each card arrives
-        const int motion = detectMotion(subtractor, frame, north, south, showWindows);
+        const int motion = detectMotion(subtractor, frame, north, south);
         if (!builder && leader == "") {
             if (north >= 5)
             {
@@ -89,7 +89,7 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
         for (const auto &rect : finalRect)
         {
             std::string recognized = ReconCard(recognitionFrame, rect, templateFolder);
-            if (recognized == "" || firstCard && recognized == firstCard->id)
+            if (recognized == "" || firstCard && recognized == firstCard->name())
                 continue;
 
             ++cardVotes[recognized];
@@ -100,15 +100,15 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                 if (!firstCard)
                 {
                     // Create the first card object and assign it to the appropriate player
-                    try {
-                        firstCard = createCard(recognized);
-                        std::cout << "Prima carta riconosciuta: " << secondCard->id 
-                                  << " Number: " << secondCard->number 
-                                  << " Seed: " << secondCard->seed 
-                                  << " Points: " << secondCard->points << std::endl;
-                    } catch (const std::exception& e) {
-                        std::cerr << e.what() << std::endl;
+                    const CardLabel card = cardFromName(recognized);
+                    if (!card.valid()) {
+                        std::cerr << "Invalid card name: " << recognized << std::endl;
+                        continue;
                     }
+                    firstCard = card;
+                    std::cout << "Prima carta riconosciuta: " << firstCard->toString()
+                              << " (classId " << firstCard->classId
+                              << ", points " << firstCard->points() << ")" << std::endl;
 
                     if (leader == "North") {
                         playerNorth.card = *firstCard;
@@ -123,15 +123,15 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                 else
                 {
                     // Create the second card object and assign it to the appropriate player
-                    try {
-                        secondCard = createCard(recognized);
-                        std::cout << "Seconda carta riconosciuta: " << secondCard->id 
-                                  << " Number: " << secondCard->number 
-                                  << " Seed: " << secondCard->seed 
-                                  << " Points: " << secondCard->points << std::endl;
-                    } catch (const std::exception& e) {
-                        std::cerr << e.what() << std::endl;
+                    const CardLabel card = cardFromName(recognized);
+                    if (!card.valid()) {
+                        std::cerr << "Invalid card name: " << recognized << std::endl;
+                        continue;
                     }
+                    secondCard = card;
+                    std::cout << "Seconda carta riconosciuta: " << secondCard->toString()
+                              << " (classId " << secondCard->classId
+                              << ", points " << secondCard->points() << ")" << std::endl;
 
                     if (leader == "North") {
                         playerSouth.card = *secondCard;
@@ -149,8 +149,8 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                 std::cerr << "Unable to open output file." << std::endl;
             } else {
                 outputFile << "Round " << round << '\n'
-                           << "North : " << playerNorth.card->number << " , " << playerNorth.card->seed << '\n'
-                           << "South : " << playerSouth.card->number << " , " << playerSouth.card->seed << '\n'
+                           << "North : " << playerNorth.card->toString() << '\n'
+                           << "South : " << playerSouth.card->toString() << '\n'
                            << "Briscola : " << '\n'
                            << "Leader : " << leader << '\n'
                            << "Winner : " << results.winner << '\n'

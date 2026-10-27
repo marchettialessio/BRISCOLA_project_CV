@@ -114,10 +114,8 @@ int buildTrentineSet(const std::filesystem::path &scansDir, const std::filesyste
         if (!entry.is_regular_file() || (ext != ".jpg" && ext != ".png"))
             continue;
 
-        std::string stem = entry.path().stem().string();
-        std::replace(stem.begin(), stem.end(), '-', ',');
-        CardLabel card;
-        if (!parseCard(stem, card))
+        const CardLabel card = cardFromName(entry.path().stem().string());
+        if (!card.valid())
         {
             std::cerr << "Invalid scan name, skipped: " << entry.path().filename() << std::endl;
             continue;

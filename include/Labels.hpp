@@ -14,6 +14,15 @@ struct CardLabel
 
     // false for a card that was not found/recognized
     bool valid() const { return classId >= 0; }
+
+    // Points of the card in Briscola (ace 11, three 10, king 4, knight 3, jack 2, others 0)
+    int points() const;
+
+    // Name used by the template images (ex. "10-clubs")
+    std::string name() const;
+
+    // Format used in the output/label files (ex. "10 , clubs")
+    std::string toString() const;
 };
 
 // Content of a round: used both for the ground truth and for the predictions
@@ -42,6 +51,9 @@ bool parseCard(const std::string &value, CardLabel &card);
 
 // Inverse of classId = suit*10 + (rank - 1), used to decode the classifier output
 CardLabel cardFromClassId(int classId);
+
+// Converts a template name (ex. "10-clubs") to CardLabel, invalid card if the name is wrong
+CardLabel cardFromName(const std::string &name);
 
 // i want to parse the label file and return the game: one RoundLabel for each round + final result
 GameLabel parseGame(const std::filesystem::path &file);
