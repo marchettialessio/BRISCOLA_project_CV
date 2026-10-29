@@ -4,8 +4,6 @@
 #include <opencv2/opencv.hpp>
 #include <filesystem>
 #include <regex>
-#include <optional>
-#include <charconv>
 
 struct Card {
     std::string id;     // e.g., "10-clubs"
@@ -41,6 +39,6 @@ bool checkInteger(const std::string_view value);
 struct Card createCard(const std::string templatePath);
 
 // Get the round results based on the leader and the cards played and print them
-RoundResults getRoundResults(int round, std::string leader, const Card &firstCard, const Card &secondCard, const Card &briscola, int &pointsPlayerNorth, int &pointsPlayerSouth);
+RoundResults getRoundResults(int round, std::string leader, const Card &firstCard, const Card &secondCard, int &pointsPlayerNorth, int &pointsPlayerSouth);
 
 #endif // UTILITY_HPP
