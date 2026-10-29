@@ -91,7 +91,7 @@ struct Card createCard(const std::string templatePath) {
     }
 }
 
-RoundResults getRoundResults(int round, std::string leader, const Card &firstCard, const Card &secondCard, int &pointsPlayerNorth, int &pointsPlayerSouth) {
+RoundResults getRoundResults(int round, std::string leader, const Card &firstCard, const Card &secondCard, const Card &briscola, int &pointsPlayerNorth, int &pointsPlayerSouth) {
     std::string winner;
     int roundPoints = firstCard.points + secondCard.points;
 

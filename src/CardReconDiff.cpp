@@ -55,7 +55,8 @@ static std::vector<cv::Point2f> orderPoints(const std::vector<cv::Point2f>& poli
     return ordinati;
 }
 
-static cv::Mat rectangleOmography(const cv::Mat& image, const std::vector<cv::Point2f>& poligon)
+static cv::Mat rectangleOmography(const cv::Mat& image, const std::vector<cv::Point2f>& poligon,
+                                  cv::Size outputSize = cv::Size(500, 300), int orientation = -1)
 {
     std::vector<cv::Point2f> source = orderPoints(poligon);
     float width = std::max(cv::norm(source[1] - source[0]), cv::norm(source[2] - source[3]));
@@ -66,11 +67,20 @@ static cv::Mat rectangleOmography(const cv::Mat& image, const std::vector<cv::Po
         return cv::Mat();
     }
 
-    const int outputWidth = 500;
-    const int outputHeight = 300;
+    const int outputWidth = outputSize.width;
+    const int outputHeight = outputSize.height;
     std::vector<cv::Point2f> destination;
 
-    if (width > height)
+    if (orientation == 1)
+    {
+        destination = {
+            {static_cast<float>(outputWidth - 1), 0.0f},
+            {static_cast<float>(outputWidth - 1), static_cast<float>(outputHeight - 1)},
+            {0.0f, static_cast<float>(outputHeight - 1)},
+            {0.0f, 0.0f}
+        };
+    }
+    else if (orientation == 0 || (orientation < 0 && width > height))
     {
         destination = {
             {0.0f, 0.0f},
@@ -203,6 +213,146 @@ std::string ReconCard(const cv::Mat& frame, cv::RotatedRect card, const fs::path
     if (bestDifference > maxDifference || bestGrayDifference>60)
     {
         std::cerr << "Match scartato: differenza sopra la soglia " << maxDifference << std::endl;
+        return "";
+    }
+
+    return bestMatch.stem().string();
+}
+
+std::string ReconBriscola(const cv::Mat& frame, cv::RotatedRect briscola, const fs::path templateFolder,
+                          double& differenceScore)
+{
+    constexpr double maxDifference = 0.7;
+
+    struct TemplateFeatures
+    {
+        fs::path path;
+        cv::Mat grayImage;
+        cv::Mat colorImage;
+    };
+
+    const cv::Size templateSize(500, 300);
+    std::vector<TemplateFeatures> templates;
+
+    for (const auto& entry : fs::directory_iterator(templateFolder))
+    {
+        if (!entry.is_regular_file())
+        {
+            continue;
+        }
+
+        cv::Mat img = cv::imread(entry.path().string(), cv::IMREAD_COLOR);
+        if (img.empty())
+        {
+            continue;
+        }
+
+            cv::resize(img, img, templateSize);
+        cv::Mat templateGray;
+        cv::cvtColor(img, templateGray, cv::COLOR_BGR2GRAY);
+        cv::GaussianBlur(templateGray, templateGray, cv::Size(3, 3), 1.2);
+        cv::Mat smallTemplateGray;
+        cv::pyrDown(templateGray, smallTemplateGray);
+        cv::GaussianBlur(img, img, cv::Size(3, 3), 1.2);
+        cv::Mat smallTemplateColor;
+        cv::pyrDown(img, smallTemplateColor);
+        templates.push_back({entry.path(), smallTemplateGray, smallTemplateColor});
+    }
+
+    std::array<cv::Point2f, 4> vertices;
+    briscola.points(vertices.data());
+    std::vector<cv::Point2f> polygon(vertices.begin(), vertices.end());
+
+        const std::vector<cv::Point2f> ordered = orderPoints(polygon);
+        const double sideA = (cv::norm(ordered[1] - ordered[0]) + cv::norm(ordered[2] - ordered[3])) / 2.0;
+        const double sideB = (cv::norm(ordered[2] - ordered[1]) + cv::norm(ordered[3] - ordered[0])) / 2.0;
+        const bool sideAIsShort = sideA <= sideB;
+        const double cardShortSidePx = std::min(sideA, sideB);
+        const double visibleSidePx = std::max(sideA, sideB);
+        if (cardShortSidePx <= 0.0)
+        {
+            differenceScore = std::numeric_limits<double>::max();
+            return "";
+        }
+
+        const double scale = templateSize.height / cardShortSidePx;
+        const cv::Size patchSize(cvRound(visibleSidePx * scale), cvRound(cardShortSidePx * scale));
+        if (patchSize.width <= 0 || patchSize.height <= 0 ||
+            patchSize.width > templateSize.width || patchSize.height > templateSize.height)
+        {
+            differenceScore = std::numeric_limits<double>::max();
+            return "";
+        }
+
+        cv::Mat rectified = rectangleOmography(frame, polygon, patchSize, sideAIsShort ? 1 : 0);
+    if (rectified.empty())
+    {
+        std::cerr << "Errore: impossibile rettificare la carta." << std::endl;
+        return "";
+    }
+    cv::imshow("Omografia briscola", rectified);
+
+    cv::Mat rectifiedGray;
+    cv::cvtColor(rectified, rectifiedGray, cv::COLOR_BGR2GRAY);
+    const int marginX = static_cast<int>(rectifiedGray.cols * 0.08);
+    const int marginY = static_cast<int>(rectifiedGray.rows * 0.08);
+    const cv::Rect patchBounds(marginX, marginY,
+        rectifiedGray.cols - 2 * marginX, rectifiedGray.rows - 2 * marginY);
+    cv::Mat patch = rectifiedGray(patchBounds);
+    cv::GaussianBlur(patch, patch, cv::Size(3, 3), 1.2);
+    cv::Mat smallPatch;
+    cv::pyrDown(patch, smallPatch);
+    cv::Mat colorPatch = rectified(patchBounds);
+    cv::GaussianBlur(colorPatch, colorPatch, cv::Size(3, 3), 1.2);
+    cv::Mat smallColorPatch;
+    cv::pyrDown(colorPatch, smallColorPatch);
+    cv::Mat rotatedPatch;
+    cv::rotate(smallPatch, rotatedPatch, cv::ROTATE_180);
+    const std::array<cv::Mat, 2> patches = {smallPatch, rotatedPatch};
+    cv::Mat rotatedColorPatch;
+    cv::rotate(smallColorPatch, rotatedColorPatch, cv::ROTATE_180);
+    const std::array<cv::Mat, 2> colorPatches = {smallColorPatch, rotatedColorPatch};
+
+    fs::path bestMatch;
+    double bestDifference = std::numeric_limits<double>::max();
+    cv::Point bestPosition;
+    int bestRotation = 0;
+
+    for (const TemplateFeatures& templ : templates)
+    {
+        for (std::size_t rotation = 0; rotation < patches.size(); ++rotation)
+        {
+            if (patches[rotation].cols > templ.grayImage.cols || patches[rotation].rows > templ.grayImage.rows)
+            {
+                continue;
+            }
+
+            cv::Mat grayResult, colorResult, combinedResult;
+            cv::Point currentPosition;
+            cv::matchTemplate(templ.grayImage, patches[rotation], grayResult, cv::TM_SQDIFF_NORMED);
+            cv::matchTemplate(templ.colorImage, colorPatches[rotation], colorResult, cv::TM_SQDIFF_NORMED);
+            cv::addWeighted(grayResult, 0.5, colorResult, 0.5, 0.0, combinedResult);
+            double currentDifference;
+            cv::minMaxLoc(combinedResult, &currentDifference, nullptr, &currentPosition, nullptr);
+
+            if (currentDifference < bestDifference)
+            {
+                bestDifference = currentDifference;
+                bestMatch = templ.path;
+                bestPosition = currentPosition;
+                bestRotation = static_cast<int>(rotation) * 180;
+            }
+        }
+    }
+
+    differenceScore = bestDifference;
+    std::cout << "Miglior match briscola = " << bestMatch.stem().string()
+              << " (differenza = " << bestDifference
+              << ", posizione = " << bestPosition.x
+              << ", rotazione = " << bestRotation << " gradi)" << std::endl;
+    if (bestMatch.empty() || bestDifference > maxDifference)
+    {
+        std::cerr << "Match briscola scartato: differenza sopra la soglia " << maxDifference << std::endl;
         return "";
     }
 
