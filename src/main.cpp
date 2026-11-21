@@ -13,7 +13,7 @@
 bool showWindows = true; // Global variable to control window display
 
 bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBuilder *builder, bool firstRound,
-                 const std::filesystem::path &templateFolder, int round, Player &playerNorth, Player &playerSouth)
+                 const std::filesystem::path &templateFolder, int round, Player &playerNorth, Player &playerSouth, std::optional<Card> briscolaGame)
 {
     cv::VideoCapture video(path);
     if (!video.isOpened())
@@ -31,12 +31,13 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
     int north = 0, south = 0; // Votes for the first card detection
     std::string leader; // Leader side (North or South)
 
-    bool briscolaFixed = false;
-    cv::RotatedRect briscola;
+    cv::RotatedRect bestBriscolaRect;
+    std::string bestBriscolaMatch;
+    double bestBriscolaDifference = std::numeric_limits<double>::max();
 
     std::map<std::string, int> cardVotes;
-    std::optional<CardLabel> firstCard;
-    std::optional<CardLabel> secondCard;
+    std::optional<Card> firstCard;
+    std::optional<Card> secondCard;
 
     int frameIndex = 0;
     cv::namedWindow("Video Frame", cv::WINDOW_NORMAL);
@@ -53,7 +54,7 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
         // If the first card has not been detected yet, perform motion detection to find the first card
         // In dataset mode the Leader comes from the label: motion detection is not needed
         // Motion side is also used by the builder to know from which side each card arrives
-        const int motion = detectMotion(subtractor, frame, north, south);
+        const int motion = detectMotion(subtractor, frame, north, south, showWindows);
         if (!builder && leader == "") {
             if (north >= 5)
             {
@@ -67,29 +68,18 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
             }
         }
 
-        if (firstRound && frameIndex < 5 && !briscolaFixed)
-        {
-            briscolaFixed = findBriscola(frame, grayFrame, kernel, briscola);
-            if (frameIndex == 4 && !briscolaFixed)
-            {
-                std::cout << "Briscola non trovata nei primi 5 frame." << std::endl;
-            }
-        }
+        cv::Mat recognitionFrame = frame.clone();
+        cv::RotatedRect candidateBriscola;
+        const bool briscolaCandidateFound = firstRound && frameIndex < 5 && !briscolaGame
+                                         && findBriscola(recognitionFrame, grayFrame, kernel, candidateBriscola);
 
         // Find cards in the current frame
-        cv::Mat recognitionFrame = frame.clone();
         std::vector<cv::RotatedRect> finalRect = findCards(frame, grayFrame, kernel, builder, motion);
-        if (briscolaFixed && frameIndex < 5)
-        {
-            drawRectangles(frame, {briscola});
-            const cv::Rect bounds = briscola.boundingRect();
-            std::cout << "Briscola trovata al frame " << frameIndex + 1 << std::endl;
-        }
 
         for (const auto &rect : finalRect)
         {
             std::string recognized = ReconCard(recognitionFrame, rect, templateFolder);
-            if (recognized == "" || firstCard && recognized == firstCard->name())
+            if (recognized == "" || firstCard && recognized == firstCard->id)
                 continue;
 
             ++cardVotes[recognized];
@@ -100,15 +90,15 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                 if (!firstCard)
                 {
                     // Create the first card object and assign it to the appropriate player
-                    const CardLabel card = cardFromName(recognized);
-                    if (!card.valid()) {
-                        std::cerr << "Invalid card name: " << recognized << std::endl;
-                        continue;
+                    try {
+                        firstCard = createCard(recognized);
+                        std::cout << "Prima carta riconosciuta: " << firstCard->id 
+                                  << " Number: " << firstCard->number 
+                                  << " Seed: " << firstCard->seed 
+                                  << " Points: " << firstCard->points << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << e.what() << std::endl;
                     }
-                    firstCard = card;
-                    std::cout << "Prima carta riconosciuta: " << firstCard->toString()
-                              << " (classId " << firstCard->classId
-                              << ", points " << firstCard->points() << ")" << std::endl;
 
                     if (leader == "North") {
                         playerNorth.card = *firstCard;
@@ -123,15 +113,15 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                 else
                 {
                     // Create the second card object and assign it to the appropriate player
-                    const CardLabel card = cardFromName(recognized);
-                    if (!card.valid()) {
-                        std::cerr << "Invalid card name: " << recognized << std::endl;
-                        continue;
+                    try {
+                        secondCard = createCard(recognized);
+                        std::cout << "Seconda carta riconosciuta: " << secondCard->id 
+                                  << " Number: " << secondCard->number 
+                                  << " Seed: " << secondCard->seed 
+                                  << " Points: " << secondCard->points << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << e.what() << std::endl;
                     }
-                    secondCard = card;
-                    std::cout << "Seconda carta riconosciuta: " << secondCard->toString()
-                              << " (classId " << secondCard->classId
-                              << ", points " << secondCard->points() << ")" << std::endl;
 
                     if (leader == "North") {
                         playerSouth.card = *secondCard;
@@ -143,15 +133,45 @@ bool processVideo(const std::string &path, std::ofstream &outputFile, DatasetBui
                 }
             }
         }
-        if (secondCard) {
-            RoundResults results = getRoundResults(round, leader, *firstCard, *secondCard, playerNorth.points, playerSouth.points);
+        if (firstRound && frameIndex < 5 && !briscolaGame)
+        {
+            if (briscolaCandidateFound)
+            {
+                double candidateDifference;
+                const std::string candidateMatch = ReconBriscola(
+                    recognitionFrame, candidateBriscola, templateFolder, candidateDifference);
+                if (!candidateMatch.empty() && candidateDifference < bestBriscolaDifference)
+                {
+                    bestBriscolaDifference = candidateDifference;
+                    bestBriscolaMatch = candidateMatch;
+                    bestBriscolaRect = candidateBriscola;
+                }
+            }
+
+            if (frameIndex == 4)
+            {
+                if (!bestBriscolaMatch.empty())
+                {
+                    briscolaGame = createCard(bestBriscolaMatch);
+                    std::cout << "Briscola riconosciuta: " << briscolaGame->id
+                              << " (differenza = " << bestBriscolaDifference << ")" << std::endl;
+                    drawRectangles(frame, {bestBriscolaRect});
+                }
+                else
+                {
+                    std::cout << "Briscola non trovata nei primi 5 frame." << std::endl;
+                }
+            }
+        }
+        if (secondCard && briscolaGame) {
+            RoundResults results = getRoundResults(round, leader, *firstCard, *secondCard, *briscolaGame, playerNorth.points, playerSouth.points);
             if(!outputFile.is_open()) {
                 std::cerr << "Unable to open output file." << std::endl;
             } else {
                 outputFile << "Round " << round << '\n'
-                           << "North : " << playerNorth.card->toString() << '\n'
-                           << "South : " << playerSouth.card->toString() << '\n'
-                           << "Briscola : " << '\n'
+                           << "North : " << playerNorth.card->number << " , " << playerNorth.card->seed << '\n'
+                           << "South : " << playerSouth.card->number << " , " << playerSouth.card->seed << '\n'
+                           << "Briscola : " << briscolaGame->id << '\n'
                            << "Leader : " << leader << '\n'
                            << "Winner : " << results.winner << '\n'
                            << "Points : " << results.points << std::endl;
@@ -185,7 +205,6 @@ int main(int argc, char **argv)
 {
     const std::filesystem::path root(PROJECT_SOURCE_DIR);
 
-    // if I want to build the Trentine dataset
     if (argc > 1 && std::string(argv[1]) == "--trentine")
         return buildTrentineSet(root / "Briscola" / "Briscola_Trentine", root / "dataset") > 0 ? 0 : 1;
 
@@ -200,7 +219,6 @@ int main(int argc, char **argv)
     std::filesystem::path outputFilePath = root / "output" / ("game" + game + "output.txt");
 
     std::ofstream outputFile(outputFilePath);
-
     std::vector<std::filesystem::path> videos;
     for (const auto &video : std::filesystem::directory_iterator(videoFolder))
     {
@@ -214,7 +232,7 @@ int main(int argc, char **argv)
 
     std::unique_ptr<DatasetBuilder> builder;
 
-    // load game labels, indexed by round, needed for dataset building mode
+    // load game labels, indexed by round
     std::map<int, RoundLabel> labels;
     if (datasetMode)
     {
@@ -233,13 +251,13 @@ int main(int argc, char **argv)
         builder = std::make_unique<DatasetBuilder>(root / "dataset", std::stoi(game));
     }
     
-    std::filesystem::path templateFolder = root / "resources" / "cards";
+    std::filesystem::path templateFolder = root / "BRISCOLA" / "Briscola_Trentine";
 
     bool firstRound = true;
     int round = 0;
     Player playerNorth = {"North", 0, {}};
     Player playerSouth = {"South", 0, {}};
-
+    std::optional<Card> briscolaGame;
     for (const auto &video : videos)
     {
         round = roundNumber(video);
@@ -254,9 +272,8 @@ int main(int argc, char **argv)
             //i start to build the dataset for the current round
             builder->startRound(labels[round]);
         }
-
         std::cout << "Processing video: " << video << std::endl;
-        if (!processVideo(video.string(), outputFile, builder.get(), firstRound, templateFolder, round, playerNorth, playerSouth))
+        if (!processVideo(video.string(), outputFile, builder.get(), firstRound, templateFolder, round, playerNorth, playerSouth, briscolaGame))
             break;
         
         firstRound = false;

@@ -3,9 +3,16 @@
 
 #include <opencv2/opencv.hpp>
 #include <filesystem>
-#include <optional>
 #include <regex>
-#include "Labels.hpp"
+#include <optional>
+#include <charconv>
+
+struct Card {
+    std::string id;     // e.g., "10-clubs"
+    int number;         // e.g., 10
+    std::string seed;   // e.g., "clubs"
+    int points;         // e.g., 4
+};
 
 struct RoundResults {
     int points;
@@ -15,7 +22,7 @@ struct RoundResults {
 struct Player {
     std::string position;       // "North" or "South"
     int points;
-    std::optional<CardLabel> card;      // The card played by the player in the current round
+    std::optional<Card> card;       // The card played by the player in the current round
 };
 
 // Draw the detected rectangles on the frame
@@ -30,7 +37,10 @@ int roundNumber(const std::filesystem::path &video);
 // Check if a cli argument is an integer
 bool checkInteger(const std::string_view value);
 
+// Create a Card object from a template image path
+struct Card createCard(const std::string templatePath);
+
 // Get the round results based on the leader and the cards played and print them
-RoundResults getRoundResults(int round, std::string leader, const CardLabel &firstCard, const CardLabel &secondCard, int &pointsPlayerNorth, int &pointsPlayerSouth);
+RoundResults getRoundResults(int round, std::string leader, const Card &firstCard, const Card &secondCard, const Card &briscola, int &pointsPlayerNorth, int &pointsPlayerSouth);
 
 #endif // UTILITY_HPP
