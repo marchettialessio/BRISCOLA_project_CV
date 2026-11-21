@@ -54,66 +54,87 @@ bool checkInteger(const std::string_view value) {
     return validSyntax && result >= 1 && result <= 4;
 }
 
-struct Card createCard(const std::string templatePath) {
-    std::regex pattern(R"((10|[1-9])-(clubs|coins|cups|spades))");
-    std::smatch match;
-
-    if (std::regex_match(templatePath, match, pattern)) {
-        std::cout << "Template path: " << templatePath << " Matches: " << match[0] << ", " << match[1] << ", " << match[2] << std::endl;
-        std::string id = match[0].str();
-        int number = std::stoi(match[1].str());
-        std::string seed = match[2].str();
-        int points = 0;
-
-        switch (number) {
-            case 1:
-                points = 11;
-                break;
-            case 3:
-                points = 10;
-                break;
-            case 8:
-                points = 2;
-                break;
-            case 9:
-                points = 3;
-                break;
-            case 10:
-                points = 4;
-                break;
-            default:
-                points = 0;
-        }
-
-        return {id, number, seed, points};
-    } else {
-        throw std::invalid_argument("Invalid template path format: " + templatePath);
-    }
-}
-
-RoundResults getRoundResults(int round, std::string leader, const Card &firstCard, const Card &secondCard, const Card &briscola, int &pointsPlayerNorth, int &pointsPlayerSouth) {
+bool getRoundResults(int round, RoundLabel &results, GameLabel &gameResults, std::string leader, const CardLabel &firstCard, const CardLabel &secondCard, const CardLabel &briscola) {
+    int roundPoints = firstCard.points() + secondCard.points();
     std::string winner;
-    int roundPoints = firstCard.points + secondCard.points;
-
-    // TODO: Implement the logic based on the briscola
-
-    if (secondCard.seed != firstCard.seed) {
-        winner = leader;
+    if (secondCard.suit != firstCard.suit) {
+        if (secondCard.suit == briscola.suit) {
+            winner = leader == "North" ? "South" : "North";     // The leader loses
+        }
+        winner = leader;    // The leader wins
     } else {
-        if (firstCard.points > secondCard.points) {
-            winner = leader;
+        if (firstCard.points() > secondCard.points()) {
+            winner = leader;        // The leader wins
         } else {
-            winner = leader == "North" ? "South" : "North";
+            winner = leader == "North" ? "South" : "North";     // The leader loses
         }
     }
 
     if (winner == "North") {
-        pointsPlayerNorth += roundPoints;
+        gameResults.totalNorth += roundPoints;
+        results.winnerNorth = true;
     } else {
-        pointsPlayerSouth += roundPoints;
+        gameResults.totalSouth += roundPoints;
+        results.winnerNorth = false;
     }
+    results.points = roundPoints;
 
     std::cout << "Round " << round << " results: " << winner << " wins with " << roundPoints << " points." << std::endl;
+    return true;
+}
 
-    return {roundPoints, winner};
+// Count correct results for the round
+void countCorrectResults(const RoundLabel label, const RoundLabel roundResults, int &correctCards, int &correctPlayers, int &correctBriscola) {
+    if (label.north.classId == roundResults.north.classId) {
+        correctCards++;
+        std::cout << "Correct card for North player." << std::endl;
+    }
+    if (label.south.classId == roundResults.south.classId) {
+        correctCards++;
+        std::cout << "Correct card for South player." << std::endl;
+    }
+    if (label.leaderNorth == roundResults.leaderNorth) {
+        correctPlayers++;
+        std::cout << "Correct leader detection." << std::endl;
+    }
+    if (label.winnerNorth == roundResults.winnerNorth) {
+        correctPlayers++;
+        std::cout << "Correct winner detection." << std::endl;
+    }
+    if (label.briscola.classId == roundResults.briscola.classId) {
+        correctBriscola++;
+        std::cout << "Correct briscola detection." << std::endl;
+    }
+}
+
+// Compute statistics for the game
+void computeGameStatistics(const GameLabel label, const std::string winner, const GameLabel gameResults, 
+                            const int correctCards, const int correctPlayers, const int correctBriscola, std::ofstream &statisticsFile) {
+    int correctResults = 0;
+    if (label.winnerNorth && winner == "North" || !label.winnerNorth && winner == "South") {
+        correctResults++;
+        std::cout << "Correct game winner detection." << std::endl;
+    }
+    if (label.totalNorth == gameResults.totalNorth) {
+        correctResults++;
+        std::cout << "Correct total points for North player." << std::endl;
+    }
+    if (label.totalSouth == gameResults.totalSouth) {
+        correctResults++;
+        std::cout << "Correct total points for South player." << std::endl;
+    }
+
+    float cardAccuracy = (static_cast<float>(correctCards) / 40.0f);
+    float playerAccuracy = (static_cast<float>(correctPlayers) / 40.0f);
+    float briscolaAccuracy = (static_cast<float>(correctBriscola) / 40.0f);
+    float gameAccuracy = (static_cast<float>(correctResults) / 3.0f);
+
+    if (statisticsFile.is_open()) {
+        statisticsFile << "Card Accuracy: " << cardAccuracy << std::endl;
+        statisticsFile << "Player Accuracy: " << playerAccuracy << std::endl;
+        statisticsFile << "Briscola Accuracy: " << briscolaAccuracy << std::endl;
+        statisticsFile << "Game Accuracy: " << gameAccuracy << std::endl;
+    } else {
+        std::cerr << "Unable to open statistics file." << std::endl;
+    }
 }

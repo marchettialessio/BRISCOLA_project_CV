@@ -8,6 +8,7 @@
 #include <string>
 
 std::string ReconCard(const cv::Mat& frame, cv::RotatedRect card, const std::filesystem::path templateFolder);
+
 std::string ReconBriscola(const cv::Mat& frame, cv::RotatedRect briscola, const std::filesystem::path templateFolder,
 						  double& difference);
 
