@@ -50,7 +50,6 @@ RoundLabel processVideo(const std::string &path, std::ofstream &outputFile, Data
     RoundLabel roundResults;
     if (briscolaCard)
         roundResults.briscola = *briscolaCard;
-    bool printedResults = false;
 
     while (true)
     {
@@ -182,23 +181,7 @@ RoundLabel processVideo(const std::string &path, std::ofstream &outputFile, Data
             }
         }
         // TODO: delete this in the final version, it's just for testing, to skip to the next round without visualizing all the frames
-        if (secondCard && briscolaCard && !printedResults) {
-            getRoundResults(round, roundResults, gameResults, leader, *firstCard, *secondCard, *briscolaCard);
-            if(!outputFile.is_open()) {
-                std::cerr << "Unable to open output file." << std::endl;
-            } else {
-                outputFile << "Round " << round << '\n'
-                           << "North : " << roundResults.north.toString() << '\n'
-                           << "South : " << roundResults.south.toString() << '\n'
-                           << "Briscola : " << briscolaCard->toString() << '\n'
-                           << "Leader : " << leader << '\n'
-                           << "Winner : " << (roundResults.winnerNorth ? "North" : "South") << '\n'
-                           << "Points : " << roundResults.points << std::endl;
-
-                std::cout << "Printed round results" << std::endl;
-            }
-
-            printedResults = true;
+        if (firstCard && secondCard && briscolaCard) {
             break;
         }
 
@@ -209,28 +192,21 @@ RoundLabel processVideo(const std::string &path, std::ofstream &outputFile, Data
             break;
         
     }
-    // TODO: in the final version, delete printedResults, beacuse you print the result only at the end of the video
-    if (!printedResults && !(firstCard && secondCard && briscolaCard)) {
-        std::cerr << "Round " << round << ": missing first card, second card or briscola, results not computed" << std::endl;
+
+    getRoundResults(round, roundResults, gameResults, leader, *firstCard, *secondCard, *briscolaCard);
+    if(!outputFile.is_open()) {
+        std::cerr << "Unable to open output file." << std::endl;
+    } else {
+        outputFile << "Round " << round << '\n'
+                    << "North : " << roundResults.north.toString() << '\n'
+                    << "South : " << roundResults.south.toString() << '\n'
+                    << "Briscola : " << briscolaCard->toString() << '\n'
+                    << "Leader : " << leader << '\n'
+                    << "Winner : " << (roundResults.winnerNorth ? "North" : "South") << '\n'
+                    << "Points : " << roundResults.points << std::endl;
+
+        std::cout << "Printed round results" << std::endl;
     }
-    else if (!printedResults) {
-            getRoundResults(round, roundResults, gameResults, leader, *firstCard, *secondCard, *briscolaCard);
-            if(!outputFile.is_open()) {
-                std::cerr << "Unable to open output file." << std::endl;
-            } else {
-                outputFile << "Round " << round << '\n'
-                           << "North : " << roundResults.north.toString() << '\n'
-                           << "South : " << roundResults.south.toString() << '\n'
-                           << "Briscola : " << briscolaCard->toString() << '\n'
-                           << "Leader : " << leader << '\n'
-                           << "Winner : " << (roundResults.winnerNorth ? "North" : "South") << '\n'
-                           << "Points : " << roundResults.points << std::endl;
-
-                std::cout << "Printed round results" << std::endl;
-            }
-
-            printedResults = true;
-        }
 
     video.release();
     cv::destroyAllWindows();
